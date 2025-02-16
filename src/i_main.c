@@ -1446,10 +1446,23 @@ int I_SavePakSettings(doom64_settings_t *msettings)
 	memcpy(&pkg_out[640], msettings, sizeof(doom64_settings_t));
 
 	ssize_t rv = fs_write(d, pkg_out, pkg_size);
-	fs_close(d);
-	free(pkg_out);
+	if (rv < 0) {
+		fs_close(d);
+		return -2;
+	}
+	ssize_t total = rv;
+	while (total < pkg_size) {
+		rv = fs_write(d, pkg_out + total, pkg_size - total);
+		if (rv < 0) {
+			fs_close(d);
+			return -2;
+		}
+		total += rv;
+	}
 
-	if (rv == pkg_size)
+	fs_close(d);
+
+	if (total == pkg_size)
 		return 0;
 	else
 		return PFS_ERR_ID_FATAL;
@@ -1493,10 +1506,23 @@ int I_SavePakFile(void)
 	}
 
 	ssize_t rv = fs_write(d, pkg_out, pkg_size);
-	fs_close(d);
-	free(pkg_out);
+	if (rv < 0) {
+		fs_close(d);
+		return -2;
+	}
+	ssize_t total = rv;
+	while (total < pkg_size) {
+		rv = fs_write(d, pkg_out + total, pkg_size - total);
+		if (rv < 0) {
+			fs_close(d);
+			return -2;
+		}
+		total += rv;
+	}
 
-	if (rv == pkg_size) {
+	fs_close(d);
+
+	if (total == pkg_size) {
 		ControllerPakStatus = 1;
 		return 0;
 	} else {
@@ -1531,9 +1557,23 @@ int I_ReadPakSettings(doom64_settings_t *msettings)
 
 	// read version first
 	ssize_t res = fs_read(d, data, size);
+	if (res < 0) {
+		fs_close(d);
+		return PFS_ERR_ID_FATAL;
+	}
+	ssize_t total = res;
+	while (total < size) {
+		res = fs_read(d, data + total, size - total);
+		if (res < 0) {
+			fs_close(d);
+			return PFS_ERR_ID_FATAL;
+		}
+		total += res;
+	}
+
 	fs_close(d);
 
-	if (res <= 0) {
+	if (total != size) {
 		free(data);
 		return PFS_ERR_ID_FATAL;
 	}
@@ -1599,12 +1639,27 @@ int I_ReadPakFile(void)
 
 	memset(&pkg, 0, sizeof(pkg));
 	ssize_t res = fs_read(d, data, size);
-	fs_close(d);
 
-	if (res <= 0) {
-		free(data);
+	if (res < 0) {
+		fs_close(d);
 		return PFS_ERR_ID_FATAL;
 	}
+	ssize_t total = res;
+	while (total < size) {
+		res = fs_read(d, data + total, size - total);
+		if (res < 0) {
+			fs_close(d);
+			return PFS_ERR_ID_FATAL;
+		}
+		total += res;
+	}
+
+	if (total != size) {
+		fs_close(d);
+		return PFS_ERR_ID_FATAL;
+	}
+
+	fs_close(d);
 
 	if(vmu_pkg_parse(data, &pkg) < 0) {
 		free(data);
@@ -1658,10 +1713,21 @@ int I_CreatePakFile(void)
 	}
 
 	ssize_t rv = fs_write(d, pkg_out, pkg_size);
+	ssize_t total = rv;
+	while (total < pkg_size) {
+		rv = fs_write(d, pkg_out + total, pkg_size - total);
+		if (rv < 0) {
+			fs_close(d);
+			return -2;
+		}
+		total += rv;
+	}
+
 	fs_close(d);
+
 	free(pkg_out);
 
-	if (rv == pkg_size) {
+	if (total == pkg_size) {
 		ControllerPakStatus = 1;
 		return 0;
 	} else {
