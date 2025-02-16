@@ -1438,8 +1438,10 @@ int I_SavePakSettings(doom64_settings_t *msettings)
 
 	vmu_pkg_build(&pkg, &pkg_out, &pkg_size);
 
-	if (!pkg_out || pkg_size <= 0)
+	if (!pkg_out || pkg_size <= 0) {
+		fs_close(d);
 		return PFS_ERR_ID_FATAL;
+	}
 
 	memcpy(&pkg_out[640], msettings, sizeof(doom64_settings_t));
 
@@ -1477,14 +1479,18 @@ int I_SavePakFile(void)
 	pkg.icon_data = vmu_icon_img;
 	memcpy(pkg.icon_pal, vmu_icon_pal, sizeof(vmu_icon_pal));
 	pkg.data_len = 512;
-	if (!Pak_Data)
+	if (!Pak_Data) {
+		fs_close(d);
 		return PFS_ERR_ID_FATAL;
+	}
 
 	pkg.data = Pak_Data;
 
 	vmu_pkg_build(&pkg, &pkg_out, &pkg_size);
-	if (!pkg_out || pkg_size <= 0)
+	if (!pkg_out || pkg_size <= 0) {
+		fs_close(d);
 		return PFS_ERR_ID_FATAL;
+	}
 
 	ssize_t rv = fs_write(d, pkg_out, pkg_size);
 	fs_close(d);
@@ -1646,8 +1652,10 @@ int I_CreatePakFile(void)
 		return PFS_ERR_ID_FATAL;
 
 	vmu_pkg_build(&pkg, &pkg_out, &pkg_size);
-	if (!pkg_out || pkg_size <= 0)
+	if (!pkg_out || pkg_size <= 0) {
+		fs_close(d);
 		return PFS_ERR_ID_FATAL;
+	}
 
 	ssize_t rv = fs_write(d, pkg_out, pkg_size);
 	fs_close(d);
