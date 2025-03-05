@@ -37,7 +37,8 @@ RGBPalette plaspal;
 RGBPalette bfggpal;
 RGBPalette lasrpal;
 
-void init_gunpals(void) {
+void init_gunpals(void)
+{
 	sawgpal.size = 256;
 	pungpal.size = 256;
 	pisgpal.size = 256;
@@ -58,6 +59,20 @@ void init_gunpals(void) {
 	plaspal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
 	bfggpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
 	lasrpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
+}
+
+void free_gunpals(void)
+{
+	free(sawgpal.table);
+	free(pungpal.table);
+	free(pisgpal.table);
+	free(sht1pal.table);
+	free(sht2pal.table);
+	free(chggpal.table);
+	free(rockpal.table);
+	free(plaspal.table);
+	free(bfggpal.table);
+	free(lasrpal.table);
 }
 
 // https://stackoverflow.com/a/466242
@@ -491,6 +506,7 @@ Texture SPORTA has 9 palettes */
 		PalettizedImage *palImg = /* ActuallyFloydSteinbergDither */Palettize(curImg,texPal);
 		allTexs[TEXNUM(i)] = palImg;
 		madeTex8[TEXNUM(i)] = 1;
+		free(curImg->pixels);
 		free(curImg);
 		free(curPal->table);
 		free(curPal);
@@ -538,7 +554,6 @@ Texture SPORTA has 9 palettes */
 
 		// EXTERNAL MONSTER PALETTES
 		if (name[0] == 'P' && name[1] == 'A' && name[2] == 'L') {
-			printf("{0,0}\n");
 			continue;
 		} else if ( (!(lumpinfo[i].name[0] & 0x80)) && ((i > 0) && (i < 347))) { // compressed bit not set in name
 			//printf("\tuncompressed lump %s\n", name);
@@ -584,34 +599,35 @@ Texture SPORTA has 9 palettes */
 				curImg = fromDoom64Sprite(expandedimg, width, height, curPal);
 				free(expandedimg);
 			}
-						allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
-						//printf("created %d\n", i);
-						if (NULL == allSprites[i]) {
-							fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
-							free(curPal->table);
-							free(curPal);
-							free(tmpdata);
-							free(enemyPal->table);
-							free(enemyPal);
-							free(nonEnemyPal->table);
-							free(nonEnemyPal);
-							free(doom64wad);
-							free(lumpinfo);
-							exit(-1);
-						}
-//printf("made sprite[%d]\n", i);
-						allSprites[i]->xoffs = xoffs;
-						allSprites[i]->yoffs = yoffs;
-						allSprites[i]->width = width;
-						allSprites[i]->height = height;
+
+			allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
+
+			if (NULL == allSprites[i]) {
+				fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
+				free(curPal->table);
+				free(curPal);
+				free(tmpdata);
+				free(enemyPal->table);
+				free(enemyPal);
+				free(nonEnemyPal->table);
+				free(nonEnemyPal);
+				free(doom64wad);
+				free(lumpinfo);
+				exit(-1);
+			}
+
+			allSprites[i]->xoffs = xoffs;
+			allSprites[i]->yoffs = yoffs;
+			allSprites[i]->width = width;
+			allSprites[i]->height = height;
 			PalettizedImage *palImg;
 			// 179 - 182 no dither
 //			if ((i >= 179 && i <= 182) || (i >= 216 && i <= 339)) {
-			if (i <= 346) {
-				palImg = Palettize(curImg, nonEnemyPal);
-			} else {
-				palImg = FloydSteinbergDither(curImg, nonEnemyPal);
-			}
+//			if (i <= 346) {
+			palImg = Palettize(curImg, nonEnemyPal);
+//			} else {
+//				palImg = FloydSteinbergDither(curImg, nonEnemyPal);
+//			}
 			allImages[i] = palImg;
 			free(curImg->pixels); free(curImg);
 			free(curPal->table); free(curPal);
@@ -633,7 +649,6 @@ Texture SPORTA has 9 palettes */
 				memcpy(tmpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i+1].filepos - lumpinfo[i].filepos);
 				memset(lumpdata,0,LUMPDATASZ);
 				decode(tmpdata, lumpdata);
-				//printf("lump dec size %d\n", decsize);
 
 				spriteN64_t *sprite = (spriteN64_t *)lumpdata;
 				unsigned short tiles = (unsigned short)SwapShort(sprite->tiles) << 1;
@@ -647,18 +662,14 @@ Texture SPORTA has 9 palettes */
 				uint8_t *src = (uint8_t *)((uintptr_t)lumpdata + sizeof(spriteN64_t));
 
 				void *paldata;
-
-				if (i >= 349 && i <= 923) {
-					printf("{%u,%u},\n", tiles, tileheight);
-				}
+				int usePal1 = 0;
+				int usePal2 = 0;
 
 				if(compressed < 0) {
-					//printf("\t\t\t256 color\n");
 					width = (width + 7) & ~7;
 					unscramble(src, width, height, tileheight, compressed);
 
 					if ((cmpsize & 1) && (i > 348) && (i < 924)) {
-						//printf("\t\t\t\tmonster\n");
 						char first4[4];
 						memcpy(first4, lumpinfo[i].name, 4);
 						first4[0] &= 0x7f;
@@ -758,6 +769,7 @@ Texture SPORTA has 9 palettes */
 
 						for (int ci=0;ci<256;ci++) {
 							if (!memcmp(first4, "SARG", 4)) {
+								usePal1 = 1;
 								curPal->table[ci].R = PALSARG0[ci][0];
 								curPal->table[ci].G = PALSARG0[ci][1];
 								curPal->table[ci].B = PALSARG0[ci][2];
@@ -765,6 +777,8 @@ Texture SPORTA has 9 palettes */
 								altPal->table[ci].G = PALSARG1[ci][1];
 								altPal->table[ci].B = PALSARG1[ci][2];
 							} else if (!memcmp(first4, "PLAY", 4)) {
+								usePal1 = 1;
+								usePal2 = 1;
 								curPal->table[ci].R = PALPLAY0[ci][0];
 								curPal->table[ci].G = PALPLAY0[ci][1];
 								curPal->table[ci].B = PALPLAY0[ci][2];
@@ -775,6 +789,7 @@ Texture SPORTA has 9 palettes */
 								altPal2->table[ci].G = PALPLAY2[ci][1];
 								altPal2->table[ci].B = PALPLAY2[ci][2];
 							} else if (!memcmp(first4, "TROO", 4)) {
+								usePal1 = 1;
 								curPal->table[ci].R = PALTROO0[ci][0];
 								curPal->table[ci].G = PALTROO0[ci][1];
 								curPal->table[ci].B = PALTROO0[ci][2];
@@ -782,6 +797,7 @@ Texture SPORTA has 9 palettes */
 								altPal->table[ci].G = PALTROO1[ci][1];
 								altPal->table[ci].B = PALTROO1[ci][2];
 							} else if (!memcmp(first4, "BOSS", 4)) {
+								usePal1 = 1;
 								curPal->table[ci].R = PALBOSS0[ci][0];
 								curPal->table[ci].G = PALBOSS0[ci][1];
 								curPal->table[ci].B = PALBOSS0[ci][2];
@@ -805,6 +821,7 @@ Texture SPORTA has 9 palettes */
 								curPal->table[ci].G = PALBSPI0[ci][1];
 								curPal->table[ci].B = PALBSPI0[ci][2];
 							} else if (!memcmp(first4, "POSS", 4)) {
+								usePal1 = 1;
 								curPal->table[ci].R = PALPOSS0[ci][0];
 								curPal->table[ci].G = PALPOSS0[ci][1];
 								curPal->table[ci].B = PALPOSS0[ci][2];
@@ -827,12 +844,20 @@ Texture SPORTA has 9 palettes */
 						}
 
 						RGBImage *curImg = fromDoom64Sprite(src, width, height, curPal);
-						RGBImage *altImg = fromDoom64Sprite(src, width, height, altPal);
-						RGBImage *altImg2 = fromDoom64Sprite(src, width, height, altPal2);
+						RGBImage *altImg;
+						if (usePal1)
+							altImg = fromDoom64Sprite(src, width, height, altPal);
+						RGBImage *altImg2;
+						if (usePal2)
+							altImg2 = fromDoom64Sprite(src, width, height, altPal2);
 
-						PalettizedImage *palImg = FloydSteinbergDither(curImg, enemyPal);
-						PalettizedImage *altPalImg = FloydSteinbergDither(altImg, enemyPal);
-						PalettizedImage *altPalImg2 = FloydSteinbergDither(altImg2, enemyPal);
+						PalettizedImage *palImg = /*FloydSteinbergDither*/Palettize(curImg, enemyPal);
+						PalettizedImage *altPalImg;
+						if (usePal1)
+							altPalImg = /*FloydSteinbergDither*/Palettize(altImg, enemyPal);
+						PalettizedImage *altPalImg2;
+						if (usePal2)
+							altPalImg2 = /*FloydSteinbergDither*/Palettize(altImg2, enemyPal);
 
 						allImages[i] = palImg;
 						int wp2 = np2(width);
@@ -840,8 +865,10 @@ Texture SPORTA has 9 palettes */
 						int hp2 = np2(height);
 						if(hp2 < 8) hp2 = 8;
 						Resize(palImg, wp2, hp2);
-						Resize(altPalImg, wp2, hp2);
-						Resize(altPalImg2, wp2, hp2);
+						if (usePal1)
+							Resize(altPalImg, wp2, hp2);
+						if (usePal2)
+							Resize(altPalImg2, wp2, hp2);
 
 						allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
 						if (NULL == allSprites[i]) {
@@ -861,7 +888,7 @@ Texture SPORTA has 9 palettes */
 							free(lumpinfo);
 							exit(-1);
 						}
-//printf("made sprite[%d]\n", i);
+
 						allSprites[i]->xoffs = xoffs;
 						allSprites[i]->yoffs = yoffs;
 						allSprites[i]->width = wp2;
@@ -907,6 +934,7 @@ Texture SPORTA has 9 palettes */
 						}
 
 						if (altlumpnum != -1) {
+							allImages[altlumpnum] = altPalImg;
 							allSprites[altlumpnum] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
 							if (NULL == allSprites[altlumpnum]) {
 								fprintf(stderr, "Could not allocate sprite for alt lump %d.\n", altlumpnum);
@@ -934,6 +962,7 @@ Texture SPORTA has 9 palettes */
 						}
 
 						if (altlumpnum2 != -1) {
+							allImages[altlumpnum2] = altPalImg2;
 							allSprites[altlumpnum2] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
 							if (NULL == allSprites[altlumpnum2]) {
 								fprintf(stderr, "Could not allocate sprite for alt2 lump %d.\n", altlumpnum2);
@@ -960,127 +989,143 @@ Texture SPORTA has 9 palettes */
 							allSprites[altlumpnum2]->height = (hp2);
 							load_twid(allSprites[altlumpnum2]->data, altPalImg2->pixels, wp2, hp2);
 						}
+						if (usePal1) {
+							free(altImg->pixels);
+							free(altImg);
+						}
+						if (usePal2) {
+							free(altImg2->pixels);
+							free(altImg2);
+						}
 
 						free(curImg->pixels); free(curImg);
 						free(curPal->table); free(curPal);
 						free(altPal->table); free(altPal);
 						free(altPal2->table); free(altPal2);
 					} else {
-
 						//printf("\t\t\t\tnonenemy\n");
 						//non-enemy 256 color sprite %d\n", i);
 						RGBPalette *curPal;
+						RGBPalette *tmpPal;
 						if (!(memcmp(name,"SAWGA0",6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-									sawgpal.table[n].R = curPal->table[n].R;
-									sawgpal.table[n].G = curPal->table[n].G;
-									sawgpal.table[n].B = curPal->table[n].B;
+									sawgpal.table[n].R = tmpPal->table[n].R;
+									sawgpal.table[n].G = tmpPal->table[n].G;
+									sawgpal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "PUNGA0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-									pungpal.table[n].R = curPal->table[n].R;
-									pungpal.table[n].G = curPal->table[n].G;
-									pungpal.table[n].B = curPal->table[n].B;
+									pungpal.table[n].R = tmpPal->table[n].R;
+									pungpal.table[n].G = tmpPal->table[n].G;
+									pungpal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "PISGA0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-									pisgpal.table[n].R = curPal->table[n].R;
-									pisgpal.table[n].G = curPal->table[n].G;
-									pisgpal.table[n].B = curPal->table[n].B;
+									pisgpal.table[n].R = tmpPal->table[n].R;
+									pisgpal.table[n].G = tmpPal->table[n].G;
+									pisgpal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "SHT1A0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-									sht1pal.table[n].R = curPal->table[n].R;
-									sht1pal.table[n].G = curPal->table[n].G;
-									sht1pal.table[n].B = curPal->table[n].B;
+									sht1pal.table[n].R = tmpPal->table[n].R;
+									sht1pal.table[n].G = tmpPal->table[n].G;
+									sht1pal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "SHT2A0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-								sht2pal.table[n].R = curPal->table[n].R;
-								sht2pal.table[n].G = curPal->table[n].G;
-								sht2pal.table[n].B = curPal->table[n].B;
+								sht2pal.table[n].R = tmpPal->table[n].R;
+								sht2pal.table[n].G = tmpPal->table[n].G;
+								sht2pal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "CHGGA0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-								chggpal.table[n].R = curPal->table[n].R;
-								chggpal.table[n].G = curPal->table[n].G;
-								chggpal.table[n].B = curPal->table[n].B;
+								chggpal.table[n].R = tmpPal->table[n].R;
+								chggpal.table[n].G = tmpPal->table[n].G;
+								chggpal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "ROCKA0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-								rockpal.table[n].R = curPal->table[n].R;
-								rockpal.table[n].G = curPal->table[n].G;
-								rockpal.table[n].B = curPal->table[n].B;
+								rockpal.table[n].R = tmpPal->table[n].R;
+								rockpal.table[n].G = tmpPal->table[n].G;
+								rockpal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "PLASA0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-								plaspal.table[n].R = curPal->table[n].R;
-								plaspal.table[n].G = curPal->table[n].G;
-								plaspal.table[n].B = curPal->table[n].B;
+								plaspal.table[n].R = tmpPal->table[n].R;
+								plaspal.table[n].G = tmpPal->table[n].G;
+								plaspal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "BFGGA0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-								bfggpal.table[n].R = curPal->table[n].R;
-								bfggpal.table[n].G = curPal->table[n].G;
-								bfggpal.table[n].B = curPal->table[n].B;
+								bfggpal.table[n].R = tmpPal->table[n].R;
+								bfggpal.table[n].G = tmpPal->table[n].G;
+								bfggpal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						} else if (!(memcmp(name, "LASRA0", 6))) {
 							paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
- 							curPal = fromDoom64Palette((short *)paldata, 256);
+ 							tmpPal = fromDoom64Palette((short *)paldata, 256);
 							for(int n=0;n<256;n++) {
-								lasrpal.table[n].R = curPal->table[n].R;
-								lasrpal.table[n].G = curPal->table[n].G;
-								lasrpal.table[n].B = curPal->table[n].B;
+								lasrpal.table[n].R = tmpPal->table[n].R;
+								lasrpal.table[n].G = tmpPal->table[n].G;
+								lasrpal.table[n].B = tmpPal->table[n].B;
 							}
+							free(tmpPal->table); free(tmpPal);
 						}
 
-						if (cmpsize & 1) {
-							if (!(memcmp(name,"SAWG",4))) {
-								curPal = &sawgpal;
-							} else if (!(memcmp(name, "PUNG", 4))) {
-								curPal = &pungpal;
-							} else if (!(memcmp(name, "PISG", 4))) {
-								curPal = &pisgpal;
-							} else if (!(memcmp(name, "SHT1", 4))) {
-								curPal = &sht1pal;
-							} else if (!(memcmp(name, "SHT2", 4))) {
-								curPal = &sht2pal;
-							} else if (!(memcmp(name, "CHGG", 4))) {
-								curPal = &chggpal;
-							} else if (!(memcmp(name, "ROCK", 4))) {
-								curPal = &rockpal;
-							} else if (!(memcmp(name, "PLAS", 4))) {
-								curPal = &plaspal;
-							} else if (!(memcmp(name, "BFGG", 4))) {
-								curPal = &bfggpal;
-							} else if (!(memcmp(name, "LASR", 4))) {
-								curPal = &lasrpal;
-							}
+//						if (cmpsize & 1) {
+						if (!(memcmp(name,"SAWG",4))) {
+							curPal = &sawgpal;
+						} else if (!(memcmp(name, "PUNG", 4))) {
+							curPal = &pungpal;
+						} else if (!(memcmp(name, "PISG", 4))) {
+							curPal = &pisgpal;
+						} else if (!(memcmp(name, "SHT1", 4))) {
+							curPal = &sht1pal;
+						} else if (!(memcmp(name, "SHT2", 4))) {
+							curPal = &sht2pal;
+						} else if (!(memcmp(name, "CHGG", 4))) {
+							curPal = &chggpal;
+						} else if (!(memcmp(name, "ROCK", 4))) {
+							curPal = &rockpal;
+						} else if (!(memcmp(name, "PLAS", 4))) {
+							curPal = &plaspal;
+						} else if (!(memcmp(name, "BFGG", 4))) {
+							curPal = &bfggpal;
+						} else if (!(memcmp(name, "LASR", 4))) {
+							curPal = &lasrpal;
 						}
+//						}
 
 						allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
 						if (NULL == allSprites[i]) {
 							fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
-							free(curPal->table);
-							free(curPal);
 							free(tmpdata);
 							free(enemyPal->table);
 							free(enemyPal);
@@ -1097,7 +1142,7 @@ Texture SPORTA has 9 palettes */
 						allSprites[i]->height = height;
 
 						RGBImage *curImg = fromDoom64Sprite(src, width, height, curPal);
-						PalettizedImage *palImg = FloydSteinbergDither(curImg, nonEnemyPal);
+						PalettizedImage *palImg = /*FloydSteinbergDither*/Palettize(curImg, nonEnemyPal);
 						allImages[i] = palImg;
 						free(curImg->pixels); free(curImg);
 					}
@@ -1112,32 +1157,31 @@ Texture SPORTA has 9 palettes */
 					PalettizedImage *palImg;
 					// 179 - 182 no dither
 //					if ((i >= 179 && i <= 182) || (i >= 216 && i <= 339)) {
-					if (i <= 346) {
-						palImg = Palettize(curImg, nonEnemyPal);
-					} else {
-						palImg = FloydSteinbergDither(curImg, nonEnemyPal);
+//					if (i <= 346) {
+					palImg = Palettize(curImg, nonEnemyPal);
+//					} else {
+//						palImg = FloydSteinbergDither(curImg, nonEnemyPal);
+//					}
+
+					allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
+					if (NULL == allSprites[i]) {
+						fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
+						free(curPal->table);
+						free(curPal);
+						free(tmpdata);
+						free(enemyPal->table);
+						free(enemyPal);
+						free(nonEnemyPal->table);
+						free(nonEnemyPal);
+						free(doom64wad);
+						free(lumpinfo);
+						exit(-1);
 					}
-
-						allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
-						if (NULL == allSprites[i]) {
-							fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
-							free(curPal->table);
-							free(curPal);
-							free(tmpdata);
-							free(enemyPal->table);
-							free(enemyPal);
-							free(nonEnemyPal->table);
-							free(nonEnemyPal);
-							free(doom64wad);
-							free(lumpinfo);
-							exit(-1);
-						}
 //printf("made sprite[%d]\n", i);
-						allSprites[i]->xoffs = xoffs;
-						allSprites[i]->yoffs = yoffs;
-						allSprites[i]->width = width;
-						allSprites[i]->height = height;
-
+					allSprites[i]->xoffs = xoffs;
+					allSprites[i]->yoffs = yoffs;
+					allSprites[i]->width = width;
+					allSprites[i]->height = height;
 
 					allImages[i] = palImg;
 					free(curImg->pixels); free(curImg);
@@ -1160,6 +1204,8 @@ Texture SPORTA has 9 palettes */
 		free(lumpinfo);
 		exit(-1);
 	}
+
+	memset(ne_sheet, 0, 1024*1024);
 
 	for (int i=0;i<388;i++) {
 		int lumpnum = nonenemy_sheet[i][0];
@@ -1193,6 +1239,7 @@ Texture SPORTA has 9 palettes */
 		free(lumpinfo);
 		exit(-1);
 	}
+	memset(twid_sheet, 0, 1024*1024);
 	load_twid(twid_sheet, ne_sheet, 1024, 1024);
 	uint8_t junk[16];
 	sprintf(output_paths, "%s/tex/non_enemy.tex", output_directory);
@@ -1745,6 +1792,32 @@ Texture SPORTA has 9 palettes */
 		exit(-1);
 	}
 the_end:
+
+//PalettizedImage *allTexs[503];
+//PalettizedImage *allImages[966 + 355];
+//spriteDC_t *allSprites[966 + 355];
+//textureN64_t *allN64Textures[503];
+	for (int i=0;i<503;i++) {
+		if (allTexs[i]) {
+			free(allTexs[i]->pixels);
+			free(allTexs[i]);
+		}
+
+		if (allN64Textures[i])
+			free(allN64Textures[i]);
+	}
+
+	for (int i=0;i<966+355;i++) {
+		if (allImages[i]) {
+			free(allImages[i]->pixels);
+			free(allImages[i]);
+		}
+
+		if (allSprites[i])
+			free(allSprites[i]);
+	}
+
+	free_gunpals();
 	free(enemyPal->table);
 	free(enemyPal);
 	free(nonEnemyPal->table);

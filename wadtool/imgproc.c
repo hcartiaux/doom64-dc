@@ -24,10 +24,11 @@ RGBPalette *fromDoom64Palette(uint16_t *data, int32_t count) {
 	retPal = (RGBPalette *)malloc(sizeof(RGBPalette));
 	retPal->size = count;
 	retPal->table = (RGBTriple *)malloc(count * sizeof(RGBTriple));
+	memset(retPal->table, 0, count*sizeof(RGBTriple));
 
 	palsrc = data;
 
-	for(int32_t j = 0; j < count; j++) {
+	for (int32_t j = 0; j < count; j++) {
 		val = *palsrc++;
 		val = SwapShort(val);
 		b = (val & 0x003E) << 2;
@@ -61,6 +62,7 @@ RGBImage *fromDoom64Sprite(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal)
 	retImg->width = w;
 	retImg->height = h;
 	retImg->pixels = (RGBTriple *)malloc((w * h) * sizeof(RGBTriple));
+	memset(retImg->pixels, 0, w*h*sizeof(RGBTriple));
 
 	for (int32_t j=0;j<h;j++) {
 		for (int32_t i=0; i<w; i++) {
@@ -86,6 +88,7 @@ RGBImage *fromDoom64Texture(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal
 	retImg->width = w;
 	retImg->height = h;
 	retImg->pixels = (RGBTriple *)malloc((w * h) * sizeof(RGBTriple));
+	memset(retImg->pixels, 0, w*h*sizeof(RGBTriple));
 
 	for (index = 0; index < (w * h); index += 2) {
 		uint8_t pair_pix4bpp = data[index >> 1];
@@ -114,8 +117,10 @@ static uint32_t usqrt4(uint32_t val) {
 
 	b = val / a;
 	a = (a + b) >> 1;
+
 	b = val / a;
 	a = (a + b) >> 1;
+
 	b = val / a;
 	a = (a + b) >> 1;
 
@@ -153,7 +158,7 @@ unsigned char FindNearestColor(RGBTriple *color, RGBPalette *palette) {
 	}
 
 	for (i=0; i<palette->size; i++) {
-		distanceSquared = ColorDistance(color, &(palette->table[i]));
+		distanceSquared = ColorDistance(color, (RGBTriple *)(&(palette->table[i])));
 		if (distanceSquared < minDistanceSquared) {
 			minDistanceSquared = distanceSquared;
 			bestIndex = i;
@@ -204,14 +209,14 @@ if (y + 1 < image->height) { \
 /* must free returnvalue->pixels and returnvalue */
 PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette) {
 	int x, y;
-	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage *));
+	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
 	retImg->width = image->width;
 	retImg->height = image->height;
 	retImg->pixels = malloc(image->width * image->height);
 	memset(retImg->pixels, 0, image->width * image->height);
 	for(y = 0; y < image->height; y++) {
 		for(x = 0; x < image->width; x++) {
-			RGBTriple *currentPixel = &(image->pixels[(y * image->width) + x]);
+			RGBTriple *currentPixel = (RGBTriple *)&(image->pixels[(y * image->width) + x]);
 			unsigned char index = FindNearestColor(currentPixel, palette);
 			if (index) {
 				retImg->pixels[(y * image->width) + x] = index;
@@ -223,7 +228,7 @@ PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette) {
 
 PalettizedImage *ActuallyFloydSteinbergDither(RGBImage *image, RGBPalette *palette) {
 	int x, y;
-	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage *));
+	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
 	retImg->width = image->width;
 	retImg->height = image->height;
 	retImg->pixels = malloc(image->width * image->height);
@@ -231,10 +236,10 @@ PalettizedImage *ActuallyFloydSteinbergDither(RGBImage *image, RGBPalette *palet
 
 	for(y = 0; y < image->height; y++) {
 		for(x = 0; x < image->width; x++) {
-			RGBTriple *currentPixel = &(image->pixels[(y * image->width) + x]);
+			RGBTriple *currentPixel = (RGBTriple *)&(image->pixels[(y * image->width) + x]);
 			unsigned char index = FindNearestColor(currentPixel, palette);
 			if (index) {
-				int error;
+				int error = 0;
 				retImg->pixels[(y * image->width) + x] = index;
 				compute_disperse(R);
 				compute_disperse(G);
@@ -252,7 +257,7 @@ PalettizedImage *FloydSteinbergDither(RGBImage *image, RGBPalette *palette) {
 	return Palettize(image, palette);
 #else
 	int x, y;
-	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage *));
+	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
 	retImg->width = image->width;
 	retImg->height = image->height;
 	retImg->pixels = malloc(image->width * image->height);
@@ -282,14 +287,11 @@ void Resize(PalettizedImage *image, int wp2, int hp2) {
 	uint8_t *newpixels = malloc(wp2 * hp2);
 	memset(newpixels, 0, wp2 * hp2);
 
-
 	for (int h=0;h<horig;h++) {
 		for (int w=0;w<worig;w++) {
-			newpixels[(h * wp2) + w] =
-			image->pixels[(h * worig) + w];
+			newpixels[(h * wp2) + w] = image->pixels[(h * worig) + w];
 		}
 	}
-
 
 	uint8_t *oldpixels = image->pixels;
 	image->pixels = newpixels;
@@ -302,6 +304,7 @@ void Resize(PalettizedImage *image, int wp2, int hp2) {
 uint8_t *expand_4to8(uint8_t *src, int width, int height) {
 	int tmp, i;
 	uint8_t *buffer = malloc(width*height);
+	memset(buffer, 0, width*height);
 
 	// Decompress the sprite by taking one byte and turning it into two values
 	for (tmp = 0, i = 0; i < (width * height) / 2; i++) {
@@ -322,6 +325,7 @@ void unscramble(uint8_t *img, int width, int height, int tileheight, int compres
 	tmp = 0;
 	h=0;w=0;id=0;inv=0;pos=0;
 	buffer = malloc(width*height);
+	memset(buffer, 0, width*height);
 	for (h = 0; h < height; h++, id++) {
 		// Reset the check for flipped rows if its beginning on a new tile
 		if (id == tileheight) {
@@ -333,23 +337,19 @@ void unscramble(uint8_t *img, int width, int height, int tileheight, int compres
 			if (compressed == -1) {
 				for (w = 0; w < width; w += 8) {
 					for (pos = 4; pos < 8; pos++) {
-						buffer[tmp++] =
-						img[(h*width) + w + pos];
+						buffer[tmp++] = img[(h*width) + w + pos];
 					}
 					for (pos = 0; pos < 4; pos++) {
-						buffer[tmp++] =
-						img[(h*width) + w + pos];
+						buffer[tmp++] = img[(h*width) + w + pos];
 					}
 				}
 			} else {
 				for (w = 0; w < width; w += 16) {
 					for (pos = 8; pos < 16; pos++) {
-						buffer[tmp++] =
-						img[(h * width) + w + pos];
+						buffer[tmp++] = img[(h * width) + w + pos];
 					}
 					for (pos = 0; pos < 8; pos++) {
-						buffer[tmp++] =
-						img[(h * width) + w + pos];
+						buffer[tmp++] = img[(h * width) + w + pos];
 					}
 				}
 			}
