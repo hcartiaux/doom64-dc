@@ -1,3 +1,4 @@
+#define REINDEX_FLATS 1
 #define GENERATE_BUMP_WAD 0
 
 #include <stdio.h>
@@ -206,16 +207,19 @@ short texIds[503] = {0};
 short texWs[503] = {0};
 short texHs[503] = {0};
 
-int madeTex8[503] = {0};
-PalettizedImage *allTexs[503];
-PalettizedImage *allImages[966 + 355];
+PalettizedImage *allImages[966];
 spriteDC_t *allSprites[966 + 355];
-textureN64_t *allN64Textures[503];
 
 // this is used to see if `fromDoom64Sprite` is processing a card key or a dart
 int last_lump = -1;
 
+#if REINDEX_FLATS
+
+textureN64_t *allN64Textures[503];
+
 void process_flats(void) {
+	memset(allN64Textures, 0, sizeof(textureN64_t *) * 503);
+
 	RGBPalette *texPal = (RGBPalette *)malloc(sizeof(RGBPalette));
 	texPal->size = 256;
 	texPal->table = (RGBTriple *)malloc(256 * sizeof(RGBTriple));
@@ -326,17 +330,17 @@ Texture SPORTA has 9 palettes */
 		RGBImage *curImg;
 		curPal = fromDoom64Palette(p, 16);
 		curImg = fromDoom64Texture(src, width, height, curPal);
-		PalettizedImage *palImg = Palettize(curImg,texPal);
-		allTexs[TEXNUM(i)] = palImg;
-		madeTex8[TEXNUM(i)] = 1;
+		PalettizedImage *palImg = Palettize(curImg, texPal);
 
-		allN64Textures[TEXNUM(i)] = (textureN64_t *)malloc(sizeof(textureN64_t) + (allTexs[TEXNUM(i)]->width*allTexs[TEXNUM(i)]->height));
+		allN64Textures[TEXNUM(i)] = (textureN64_t *)malloc(sizeof(textureN64_t) + (palImg->width*palImg->height));
 		allN64Textures[TEXNUM(i)]->id = SwapShort(texIds[TEXNUM(i)]);
 		allN64Textures[TEXNUM(i)]->numpal = SwapShort(0x0001);
 		allN64Textures[TEXNUM(i)]->wshift = SwapShort(texWs[TEXNUM(i)]);
 		allN64Textures[TEXNUM(i)]->hshift = SwapShort(texHs[TEXNUM(i)]);
-		load_twid(allN64Textures[TEXNUM(i)]->data, allTexs[TEXNUM(i)]->pixels, allTexs[TEXNUM(i)]->width, allTexs[TEXNUM(i)]->height);
+		load_twid(allN64Textures[TEXNUM(i)]->data, palImg->pixels, palImg->width, palImg->height);
 
+		free(palImg->pixels);
+		free(palImg);
 		free(curImg->pixels);
 		free(curImg);
 		free(curPal->table);
@@ -345,6 +349,7 @@ Texture SPORTA has 9 palettes */
 	free(texPal->table);
 	free(texPal);
 }
+#endif
 
 int main (int argc, char **argv) {
 	char output_paths[1024];
@@ -364,7 +369,7 @@ int main (int argc, char **argv) {
 	}
 
 	init_gunpals();
-	memset(allImages, 0, sizeof(PalettizedImage *) * (966+355));
+	memset(allImages, 0, sizeof(PalettizedImage *) * 966);
 
 	RGBPalette *nonEnemyPal = (RGBPalette *)malloc(sizeof(RGBPalette));
 	if (NULL == nonEnemyPal) {
@@ -448,8 +453,9 @@ int main (int argc, char **argv) {
 
 	memcpy((void*)lumpinfo, doom64wad + infotableofs, numlumps * sizeof(lumpinfo_t));
 
-	if (1)
+#if REINDEX_FLATS
 		process_flats();
+#endif
 
 	// 1 - 346 are all 16 color sprites (6 of them are uncompressed lumps)
 	for (int i=1;i<347;i++) {
@@ -1071,9 +1077,9 @@ int main (int argc, char **argv) {
 		if (i == 0) continue;
 		if ((i > 1488) && (i < 1522)) continue;
 
-		#if 1
+#if REINDEX_FLATS
 		// any flat that used a single palette is written to wad as compressed, 8bpp, twiddled, D64-encoded
-		else if (i > 969 && i < 1460 && madeTex8[TEXNUM(i)]) {
+		else if (i > 969 && i < 1460 && allN64Textures[TEXNUM(i)]) {
 			uint8_t *outbuf;
 			int outlen;
 			int wp2 = 1 << SwapShort(allN64Textures[TEXNUM(i)]->wshift);
@@ -1084,7 +1090,7 @@ int main (int argc, char **argv) {
 			int padded_size = (orig_size + 7) & ~7;
 			lastofs = lastofs + padded_size;
 		}
-		#endif
+#endif
 
 		// non enemy sprites are written to wad as uncompressed, header-only
 		else if ((i > 0) && ((i < 347) || ((i > 923) && (i < 966)))) {
@@ -1146,7 +1152,7 @@ int main (int argc, char **argv) {
 					int fileLen;
 					int origLen = sizeof(spriteDC_t);
 					int padded_size = (origLen + 7) & ~7;
-					fwrite((void*)allSprites[i], (8 + 7) & ~7, 1, fd);
+					fwrite((void*)allSprites[i], padded_size, 1, fd);
 					lumpinfo[i].name[0] &= 0x7f;
 					lumpinfo[i].filepos = lastofs;
 					lumpinfo[i].size = origLen;
@@ -1156,6 +1162,7 @@ int main (int argc, char **argv) {
 					exit(-1);
 				}
 			}
+
 			else if ((i > 1488) && (i < 1522)) {
 				if (lumpinfo[i].name[0] & 0x80) {
 					data_size = lumpinfo[i+1].filepos - lumpinfo[i].filepos;
@@ -1177,8 +1184,9 @@ int main (int argc, char **argv) {
 				fclose(map_fd);
 				free(mapdata);
 			}
-			#if 1
-			else if (i > 969 && i < 1460 && madeTex8[TEXNUM(i)]) {
+
+#if REINDEX_FLATS
+			else if (i > 969 && i < 1460 && allN64Textures[TEXNUM(i)]) {
 				uint8_t *outbuf;
 				int outlen;
 				int wp2 = 1 << SwapShort(allN64Textures[TEXNUM(i)]->wshift);
@@ -1198,7 +1206,8 @@ int main (int argc, char **argv) {
 				lumpinfo[i].size = origLen;
 				lastofs = lastofs + padded_size;
 			}
-			#endif
+#endif
+
 			else {
 				if (lumpinfo[i].name[0] & 0x80) {
 					data_size = lumpinfo[i+1].filepos - lumpinfo[i].filepos;
@@ -1212,30 +1221,34 @@ int main (int argc, char **argv) {
 				lastofs = lastofs + data_size;
 			}
 		} else {
-			uint8_t *outbuf;
-			int outlen;
-			int wp2 = (allSprites[i]->width);
-			int hp2 = (allSprites[i]->height);
-			int fileLen;
-			int origLen = sizeof(spriteDC_t) + (wp2*hp2);
-			outbuf = encode((void *)allSprites[i], origLen, &outlen);
-			fileLen = outlen;
-			int orig_size = fileLen;
-			int padded_size = (orig_size + 7) & ~7;
-			memset(lumpdata, 0, LUMPDATASZ);
-			memcpy(lumpdata, outbuf, orig_size);
-			free(outbuf);
-			fwrite(lumpdata, 1, padded_size, fd);
-			lumpinfo[i].filepos = lastofs;
-			lumpinfo[i].size = origLen;
-			lastofs = lastofs + padded_size;
+			if (allSprites[i]) {
+				uint8_t *outbuf;
+				int outlen;
+				int wp2 = (allSprites[i]->width);
+				int hp2 = (allSprites[i]->height);
+				int fileLen;
+				int origLen = sizeof(spriteDC_t) + (wp2*hp2);
+				outbuf = encode((void *)allSprites[i], origLen, &outlen);
+				fileLen = outlen;
+				int orig_size = fileLen;
+				int padded_size = (orig_size + 7) & ~7;
+				memset(lumpdata, 0, LUMPDATASZ);
+				memcpy(lumpdata, outbuf, orig_size);
+				free(outbuf);
+				fwrite(lumpdata, 1, padded_size, fd);
+				lumpinfo[i].filepos = lastofs;
+				lumpinfo[i].size = origLen;
+				lastofs = lastofs + padded_size;
+			} else {
+				fprintf(stderr, "missing sprite %d\n", i);
+				exit(-1);
+			}
 		}
 	}
 
 	for (int i=0;i<numlumps;i++) {
-		if ((i > 1488) && (i < 1522)) {
-			continue;
-		}
+		if ((i > 1488) && (i < 1522)) continue;
+
 		fwrite((void*)(&lumpinfo[i]), 1, sizeof(lumpinfo_t), fd);
 	}
 	fclose(fd);
@@ -1244,7 +1257,7 @@ int main (int argc, char **argv) {
 	char pwad[4] = {'P','W','A','D'};
 	sprintf(output_paths, "%s/alt.wad", output_directory);
 	FILE *alt_fd = fopen(output_paths, "wb");
-	for(int i=0;i<4;i++) {
+	for (int i=0;i<4;i++) {
 		fwrite(&pwad[i], 1, 1, alt_fd);
 	}
 	int numaltlumps = NUMALTLUMPS;
@@ -1285,7 +1298,7 @@ int main (int argc, char **argv) {
 	}
 
 	fwrite(&lastofs, 1, 4, alt_fd);
-// pad
+	// pad
 	fwrite(&lastofs, 1, 4, alt_fd);
 
 	for (int i = 0; i < numaltlumps; i++) {
@@ -1479,11 +1492,6 @@ int main (int argc, char **argv) {
 the_end:
 
 	for (int i=0;i<503;i++) {
-		if (allTexs[i]) {
-			free(allTexs[i]->pixels);
-			free(allTexs[i]);
-		}
-
 		if (allN64Textures[i])
 			free(allN64Textures[i]);
 	}
