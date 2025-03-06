@@ -1,4 +1,7 @@
-int D64MONSTER[256][3] = {
+// [4] for padding/alignment
+typedef uint8_t rawpal_t[256][4];
+
+rawpal_t __attribute__((aligned(4))) D64MONSTER = {
 {255,0,255},
 {7,0,0},
 {6,2,8},
@@ -257,7 +260,7 @@ int D64MONSTER[256][3] = {
 {0,0,0},
 };
 
-int D64NONENEMY[256][3] = {
+rawpal_t __attribute__((aligned(4))) D64NONENEMY = {
 {255,0,255},
 {16,16,16},
 {43,16,19},
@@ -516,7 +519,7 @@ int D64NONENEMY[256][3] = {
 {0,0,0},
 };
 
-int PALSARG0[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALSARG0 = {
 {255,0,255},
 	{232, 160, 184},
 	{200, 176, 144},
@@ -775,7 +778,7 @@ int PALSARG0[256][3] = {
 	{0, 0, 0},
 };
 
-int PALPLAY0[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALPLAY0 = {
 {255,0,255},
 {104,80,80},
 {8,32,16},
@@ -1034,7 +1037,7 @@ int PALPLAY0[256][3] = {
 {0,0,0},
 };
 
-int PALTROO0[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALTROO0 = {
 {255,0,255},
 	{176, 128, 112},
 	{160, 32, 0},
@@ -1293,7 +1296,7 @@ int PALTROO0[256][3] = {
 	{0, 0, 0},
 };
 
-int PALBOSS0[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALBOSS0 = {
 {255,0,255},
 	{208, 168, 104},
 	{192, 160, 112},
@@ -1552,7 +1555,7 @@ int PALBOSS0[256][3] = {
 	{0, 0, 0},
 };
 
-int PALFATT0[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALFATT0 = {
 {255,0,255},
 	{128, 128, 152},
 	{136, 120, 136},
@@ -1810,7 +1813,8 @@ int PALFATT0[256][3] = {
 	{0, 0, 0},
 	{0, 0, 0},
 };
-int PALSKUL0[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALSKUL0 = {
 {255,0,255},
 	{248, 248, 104},
 	{248, 248, 88},
@@ -2068,7 +2072,8 @@ int PALSKUL0[256][3] = {
 	{248, 248, 248},
 	{0, 0, 0},
 };
-int PALPAIN0[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALPAIN0 = {
 {255,0,255},
 	{248, 248, 232},
 	{248, 248, 200},
@@ -2326,7 +2331,8 @@ int PALPAIN0[256][3] = {
 	{0, 0, 0},
 	{0, 0, 0},
 };
-int PALBSPI0[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALBSPI0 = {
 {255,0,255},
 	{216, 224, 248},
 	{184, 208, 240},
@@ -2584,7 +2590,8 @@ int PALBSPI0[256][3] = {
 	{0, 0, 0},
 	{0, 0, 0},
 };
-int PALPOSS0[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALPOSS0 = {
 {255,0,255},
 	{80, 64, 40},
 	{72, 56, 40},
@@ -2842,8 +2849,9 @@ int PALPOSS0[256][3] = {
 	{0, 0, 0},
 	{0, 0, 0},
 };
+
 // custom
-int PALPOSS1[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALPOSS1 = {
 {255,0,255},
 	{24, 32, 40},
 	{24, 24, 32},
@@ -3102,7 +3110,7 @@ int PALPOSS1[256][3] = {
 	{0, 0, 0},
 };
 
-int PALHEAD0[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALHEAD0 = {
 	{255, 0, 255},
 	{240, 248, 248},
 	{248, 248, 240},
@@ -3360,7 +3368,8 @@ int PALHEAD0[256][3] = {
 	{0, 0, 0},
 	{0, 0, 0},
 };
-int PALCYBR0[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALCYBR0 = {
 {255,0,255},
 {96,104,120},
 {128,96,64},
@@ -3620,7 +3629,7 @@ int PALCYBR0[256][3] = {
 };
 
 
-int PALRECT0[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALRECT0 = {
 	{255, 0, 255},
 	{136, 96, 72},
 	{120, 104, 72},
@@ -3879,7 +3888,7 @@ int PALRECT0[256][3] = {
 	{0, 0, 0},
 };
 
-int PALBOSS1[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALBOSS1 = {
 {255,0,255},
 {208,104,96},
 {192,112,96},
@@ -4137,7 +4146,8 @@ int PALBOSS1[256][3] = {
 {0,0,0},
 {0,0,0},
 };
-int PALPLAY1[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALPLAY1 = {
 {255,0,255},
 {104,80,80},
 {24,8,8},
@@ -4395,7 +4405,8 @@ int PALPLAY1[256][3] = {
 {8,24,40},
 {0,0,0},
 };
-int PALPLAY2[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALPLAY2 = {
 {255,0,255},
 {104,80,80},
 {8,24,24},
@@ -4653,7 +4664,8 @@ int PALPLAY2[256][3] = {
 {8,24,40},
 {0,0,0},
 };
-int PALSARG1[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALSARG1 = {
 {255,0,255},
 {96,88,56},
 {56,80,48},
@@ -4911,7 +4923,8 @@ int PALSARG1[256][3] = {
 {56,8,32},
 {0,0,0},
 };
-int PALTROO1[256][3] = {
+
+rawpal_t __attribute__((aligned(4))) PALTROO1 = {
 {255,0,255},
 {120,120,160},
 {48,88,120},
@@ -5170,7 +5183,7 @@ int PALTROO1[256][3] = {
 {0,0,0},
 };
 
-int PALTEXCONV[256][3] = {
+rawpal_t __attribute__((aligned(4))) PALTEXCONV = {
 {255,0,255},
 {89,48,49},
 {80,56,57},

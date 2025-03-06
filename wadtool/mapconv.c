@@ -37,8 +37,7 @@ int GetFlatNum(char *name)
 {
 	int i = 0;
 
-	for (i = 0; i < 2048; i++)
-	{
+	for (i = 0; i < 2048; i++) {
 		if (!strcmp(name, Flats[i]))
 			break;
 	}
@@ -50,8 +49,7 @@ int GetTextureNum(char *name)
 {
 	int i = 0;
 
-	for (i = 0; i < 2048; i++)
-	{
+	for (i = 0; i < 2048; i++) {
 		if (!strcmp(name, Textures[i]))
 			break;
 	}
@@ -73,10 +71,8 @@ static unsigned short P_GetTextureHashKey(int hash)
 {
 	int i;
 
-	for (i = 0; i < 2048 /*numtextures*/; i++)
-	{
-		if (texturehashlist[0][i] == hash)
-		{
+	for (i = 0; i < 2048 /*numtextures*/; i++) {
+		if (texturehashlist[0][i] == hash) {
 			return texturehashlist[1][i];
 		}
 	}
@@ -89,8 +85,7 @@ unsigned int W_HashLumpName(const char *str)
 	unsigned int hash = 1315423911;
 	unsigned int i = 0;
 
-	for (i = 0; i < 8 && *str != '\0'; str++, i++)
-	{
+	for (i = 0; i < 8 && *str != '\0'; str++, i++) {
 		hash ^= ((hash << 5) + toupper((int)*str) + (hash >> 2));
 	}
 
@@ -158,8 +153,7 @@ void CopyLump(int lump)
 	// setnew filepos
 	mc_lumpinfo[lump].filepos = offcnt;
 
-	for (i = 0; i < mc_lumpinfo[lump].size; i++)
-	{
+	for (i = 0; i < mc_lumpinfo[lump].size; i++) {
 		fread(&data, sizeof(unsigned char), 1, mapin);
 		fputc(data, mapout);
 		size++;
@@ -167,10 +161,8 @@ void CopyLump(int lump)
 	}
 
 	pow = mc_lumpinfo[lump].size % 4;
-	if (pow != 0)
-	{
-		for (i = 0; i < 4 - pow; i++)
-		{
+	if (pow != 0) {
+		for (i = 0; i < 4 - pow; i++) {
 			fputc(0x00, mapout);
 			olen++;
 		}
@@ -211,8 +203,7 @@ void ConvertSidefs(int lump)
 
 	numsidefs = mc_lumpinfo[lump].size / 12;
 
-	for (int i = 0; i < numsidefs; i++)
-	{
+	for (int i = 0; i < numsidefs; i++) {
 		fread(&xoffset, sizeof(short), 1, mapin);
 		fread(&yoffset, sizeof(short), 1, mapin);
 		fread(&tex_up, sizeof(short), 1, mapin);
@@ -242,10 +233,8 @@ void ConvertSidefs(int lump)
 
 	int olen = size;
 	int pow = mc_lumpinfo[lump].size % 4;
-	if (pow != 0)
-	{
-		for (int i = 0; i < 4 - pow; i++)
-		{
+	if (pow != 0) {
+		for (int i = 0; i < 4 - pow; i++) {
 			fputc(0x00, mapout);
 			olen++;
 		}
@@ -285,8 +274,7 @@ void ConvertSectors(int lump)
 	mc_lumpinfo[lump].filepos = offcnt;
 	numsectors = mc_lumpinfo[lump].size / 24;
 
-	for (int i = 0; i < numsectors; i++)
-	{
+	for (int i = 0; i < numsectors; i++) {
 		fread(&floorz, sizeof(short), 1, mapin);
 		fread(&ceilz, sizeof(short), 1, mapin);
 
@@ -323,10 +311,8 @@ void ConvertSectors(int lump)
 
 	int olen = size;
 	int pow = mc_lumpinfo[lump].size % 4;
-	if (pow != 0)
-	{
-		for (int i = 0; i < 4 - pow; i++)
-		{
+	if (pow != 0) {
+		for (int i = 0; i < 4 - pow; i++) {
 			fputc(0x00, mapout);
 			olen++;
 		}
@@ -339,8 +325,7 @@ void Read_MapWad(char *name)
 {
 	int i;
 	bool haveScripts = false;
-	if ((mapin = fopen(name, "r+b")) == 0)
-	{
+	if ((mapin = fopen(name, "r+b")) == 0) {
 		Error("No encuentra el archivo %s\n", name);
 	}
 
@@ -358,28 +343,25 @@ void Read_MapWad(char *name)
 
 	fseek(mapin, mc_wadfile.infotableofs, SEEK_SET);
 
-	for (i = 0; i < mc_numlumps; i++)
-	{
+	for (i = 0; i < mc_numlumps; i++) {
 		fread(&mc_lumpinfo[i].filepos, sizeof(unsigned int), 1, mapin);
 		fread(&mc_lumpinfo[i].size, sizeof(unsigned int), 1, mapin);
 		fread(&mc_lumpinfo[i].name, sizeof(unsigned int) * 2, 1, mapin);
 
-		if (!strcmp(mc_lumpinfo[i].name, "T_START"))
-		{
+		if (!strcmp(mc_lumpinfo[i].name, "T_START")) {
 			T_START = i + 1;
 		}
-		if (!strcmp(mc_lumpinfo[i].name, "T_END"))
-		{
+
+		if (!strcmp(mc_lumpinfo[i].name, "T_END")) {
 			T_END = i;
 		}
-		if (!strcmp(mc_lumpinfo[i].name, "SCRIPTS"))
-		{
+
+		if (!strcmp(mc_lumpinfo[i].name, "SCRIPTS")) {
 			haveScripts = true;
 		}
 	}
 
-	if (haveScripts)
-	{
+	if (haveScripts) {
 		mc_numlumps -= 1;
 	}
 }
@@ -395,21 +377,19 @@ void convert(char *infn, char *outfn)
 	memset(&mc_wadfile, 0, sizeof(mc_wadfile));
 	mc_numlumps = -1;
 	T_START = T_END = 0;
-    memset(texturehashlist, 0, 2 * 2048 * 2);
+	memset(texturehashlist, 0, 2 * 2048 * 2);
 	memset(Textures, 0, 2048 * 9);
 	memset(Flats, 0, 2048 * 9);
 	mapin = mapout = NULL;
 	offcnt = 12;
 
 	// Carga TEXTURES.txt y FLATS.txt
-	for (i = 0; i < 2048; i++)
-	{
+	for (i = 0; i < 2048; i++) {
 		strncpy(Textures[i], "-", 8);
 		strncpy(Flats[i], "-", 8);
 	}
 
-	for (i = 0; i < 503; i++)
-	{
+	for (i = 0; i < 503; i++) {
 		strcpy(&Textures[i][0], &TEXTURES2[i][0]);
 
 		texturehashlist[0][i] = W_HashLumpName(Textures[i]) % 65536;
@@ -436,8 +416,7 @@ void convert(char *infn, char *outfn)
 	CopyLump(LIGHTS);
 	CopyLump(MACROS);
 
-	for (i = 0; i < mc_numlumps; i++)
-	{
+	for (i = 0; i < mc_numlumps; i++) {
 		fwrite(&mc_lumpinfo[i].filepos, sizeof(unsigned int), 1, mapout);
 		fwrite(&mc_lumpinfo[i].size, sizeof(unsigned int), 1, mapout);
 		fwrite(&mc_lumpinfo[i].name, sizeof(unsigned int) * 2, 1, mapout);

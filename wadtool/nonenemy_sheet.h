@@ -1,4 +1,5 @@
-int nonenemy_sheet[388][5] = {
+#define NUM_NONENEMY_SPRITES 388
+int nonenemy_sheet[NUM_NONENEMY_SPRITES][5] = {
 {1, 792, 61, 32, 91},
 {2, 792, 208, 32, 83},
 {3, 840, 366, 32, 64},

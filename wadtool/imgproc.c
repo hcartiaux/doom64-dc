@@ -3,8 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NODITHER 1
-
 // adapatation and extension of
 // https://literateprograms.org/floyd-steinberg_dithering__c_.html
 
@@ -12,8 +10,10 @@ extern short SwapShort(short val);
 
 #include "imgtypes.h"
 extern int last_lump;
+
 /* must free returnvalue->table AND returnvalue */
-RGBPalette *fromDoom64Palette(uint16_t *data, int32_t count) {
+RGBPalette *fromDoom64Palette(uint16_t *data, int32_t count)
+{
 	uint16_t *palsrc;
 	RGBPalette *retPal;
 	uint16_t val;
@@ -61,7 +61,8 @@ RGBPalette *fromDoom64Palette(uint16_t *data, int32_t count) {
 }
 
 /* must free returnvalue->pixels AND returnvalue */
-RGBImage *fromDoom64Sprite(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal) {
+RGBImage *fromDoom64Sprite(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal)
+{
 	RGBImage *retImg;
 	int32_t index;
 	uint8_t pixel;
@@ -95,8 +96,8 @@ RGBImage *fromDoom64Sprite(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal)
 	return retImg;
 }
 
-
-RGBImage *fromDoom64Texture(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal) {
+RGBImage *fromDoom64Texture(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal)
+{
 	RGBImage *retImg;
 	int32_t index;
 	uint8_t pixel;
@@ -130,7 +131,8 @@ RGBImage *fromDoom64Texture(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal
 }
 
 // https://stackoverflow.com/a/34187992
-static uint32_t usqrt4(uint32_t val) {
+static uint32_t usqrt4(uint32_t val)
+{
 	uint32_t a, b;
 
 	if (val < 2) return val;
@@ -173,7 +175,8 @@ uint32_t ColorDistance(RGBTriple *c1, RGBTriple *c2)
 }
 
 // this does a much better job than GIMP version of the art pipeline
-unsigned char FindNearestColor(RGBTriple *color, RGBPalette *palette) {
+unsigned char FindNearestColor(RGBTriple *color, RGBPalette *palette)
+{
 	int i, bestIndex = 0;
 	uint32_t distanceSquared, minDistanceSquared;
 	minDistanceSquared = (1 << 31);
@@ -232,7 +235,8 @@ if (y + 1 < image->height) { \
 }
 
 /* must free returnvalue->pixels and returnvalue */
-PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette) {
+PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette)
+{
 	int x, y;
 	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
 	if (NULL == retImg) {
@@ -259,18 +263,20 @@ PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette) {
 	return retImg;
 }
 
-PalettizedImage *ActuallyFloydSteinbergDither(RGBImage *image, RGBPalette *palette) {
+/* must free returnvalue->pixels and returnvalue */
+PalettizedImage *FloydSteinbergDither(RGBImage *image, RGBPalette *palette)
+{
 	int x, y;
 	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
 	if (NULL == retImg) {
-		fprintf(stderr, "failed to malloc retImg ActuallyFloydSteinbergDither\n");
+		fprintf(stderr, "failed to malloc retImg FloydSteinbergDither\n");
 		exit(-1);
 	}
 	retImg->width = image->width;
 	retImg->height = image->height;
 	retImg->pixels = malloc(image->width * image->height);
 	if (NULL == retImg->pixels) {
-		fprintf(stderr, "failed to malloc retImg->pixels ActuallyFloydSteinbergDither\n");
+		fprintf(stderr, "failed to malloc retImg->pixels FloydSteinbergDither\n");
 		exit(-1);
 	}
 	memset(retImg->pixels, 0, image->width * image->height);
@@ -291,45 +297,8 @@ PalettizedImage *ActuallyFloydSteinbergDither(RGBImage *image, RGBPalette *palet
 	return retImg;
 }
 
-
-/* must free returnvalue->pixels and returnvalue */
-PalettizedImage *FloydSteinbergDither(RGBImage *image, RGBPalette *palette) {
-#if NODITHER
-	return Palettize(image, palette);
-#else
-	int x, y;
-	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
-	if (NULL == retImg) {
-		fprintf(stderr, "failed to malloc retImg FloydSteinbergDither\n");
-		exit(-1);
-	}
-	retImg->width = image->width;
-	retImg->height = image->height;
-	retImg->pixels = malloc(image->width * image->height);
-	if (NULL == retImg->pixels) {
-		fprintf(stderr, "failed to malloc retImg->pixels FloydSteinbergDither\n");
-		exit(-1);
-	}
-	memset(retImg->pixels, 0, image->width * image->height);
-
-	for(y = 0; y < image->height; y++) {
-		for(x = 0; x < image->width; x++) {
-			RGBTriple *currentPixel = &(image->pixels[(y * image->width) + x]);
-			unsigned char index = FindNearestColor(currentPixel, palette);
-			if (index) {
-				int error;
-				retImg->pixels[(y * image->width) + x] = index;
-				compute_disperse(R);
-				compute_disperse(G);
-				compute_disperse(B);
-			}
-		}
-	}
-	return retImg;
-#endif
-}
-
-void Resize(PalettizedImage *image, int wp2, int hp2) {
+void Resize(PalettizedImage *image, int wp2, int hp2)
+{
 	int worig = image->width;
 	int horig = image->height;
 
@@ -354,7 +323,8 @@ void Resize(PalettizedImage *image, int wp2, int hp2) {
 // from Doom64EX wadgen
 // https://github.com/svkaiser/Doom64EX/blob/a5a8ccb87db062d4aacfbda09ac1404d49b5e973/src/engine/wadgen/sprite.cc#L179
 /* must free return value */
-uint8_t *expand_4to8(uint8_t *src, int width, int height) {
+uint8_t *expand_4to8(uint8_t *src, int width, int height)
+{
 	int tmp, i;
 	uint8_t *buffer = malloc(width*height);
 	if (NULL == buffer) {
@@ -376,7 +346,8 @@ uint8_t *expand_4to8(uint8_t *src, int width, int height) {
 // from Doom64EX wadgen
 // https://github.com/svkaiser/Doom64EX/blob/a5a8ccb87db062d4aacfbda09ac1404d49b5e973/src/engine/wadgen/sprite.cc#L218
 /* modifies img in place; no returnvalue, nothing to free */
-void unscramble(uint8_t *img, int width, int height, int tileheight, int compressed) {
+void unscramble(uint8_t *img, int width, int height, int tileheight, int compressed)
+{
 	uint8_t *buffer;
 	int tmp,h,w,id,inv,pos;
 	tmp = 0;
