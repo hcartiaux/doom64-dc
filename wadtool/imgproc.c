@@ -22,8 +22,16 @@ RGBPalette *fromDoom64Palette(uint16_t *data, int32_t count) {
 	uint8_t b;
 
 	retPal = (RGBPalette *)malloc(sizeof(RGBPalette));
+	if (NULL == retPal) {
+		fprintf(stderr, "failed to malloc retPal fromDoom64Palette\n");
+		exit(-1);
+	}
 	retPal->size = count;
 	retPal->table = (RGBTriple *)malloc(count * sizeof(RGBTriple));
+	if (NULL == retPal->table) {
+		fprintf(stderr, "failed to malloc retPal->table fromDoom64Palette\n");
+		exit(-1);
+	}
 	memset(retPal->table, 0, count*sizeof(RGBTriple));
 
 	palsrc = data;
@@ -59,9 +67,18 @@ RGBImage *fromDoom64Sprite(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal)
 	uint8_t pixel;
 
 	retImg = (RGBImage *)malloc(sizeof(RGBImage));
+	if (NULL == retImg) {
+		fprintf(stderr, "failed to malloc retImg fromDoom64Sprite\n");
+		exit(-1);
+	}
 	retImg->width = w;
 	retImg->height = h;
 	retImg->pixels = (RGBTriple *)malloc((w * h) * sizeof(RGBTriple));
+	if (NULL == retImg->pixels) {
+		fprintf(stderr, "failed to malloc retImg->pixels fromDoom64Sprite\n");
+		exit(-1);
+	}
+
 	memset(retImg->pixels, 0, w*h*sizeof(RGBTriple));
 
 	for (int32_t j=0;j<h;j++) {
@@ -85,9 +102,17 @@ RGBImage *fromDoom64Texture(uint8_t *data, int32_t w, int32_t h, RGBPalette *pal
 	uint8_t pixel;
 
 	retImg = (RGBImage *)malloc(sizeof(RGBImage));
+	if (NULL == retImg) {
+		fprintf(stderr, "failed to malloc retImg fromDoom64Texture\n");
+		exit(-1);
+	}
 	retImg->width = w;
 	retImg->height = h;
 	retImg->pixels = (RGBTriple *)malloc((w * h) * sizeof(RGBTriple));
+	if (NULL == retImg->pixels) {
+		fprintf(stderr, "failed to malloc retImg->pixels fromDoom64Texture\n");
+		exit(-1);
+	}
 	memset(retImg->pixels, 0, w*h*sizeof(RGBTriple));
 
 	for (index = 0; index < (w * h); index += 2) {
@@ -210,9 +235,17 @@ if (y + 1 < image->height) { \
 PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette) {
 	int x, y;
 	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
+	if (NULL == retImg) {
+		fprintf(stderr, "failed to malloc retImg Palettize\n");
+		exit(-1);
+	}
 	retImg->width = image->width;
 	retImg->height = image->height;
 	retImg->pixels = malloc(image->width * image->height);
+	if (NULL == retImg->pixels) {
+		fprintf(stderr, "failed to malloc retImg->pixels Palettize\n");
+		exit(-1);
+	}
 	memset(retImg->pixels, 0, image->width * image->height);
 	for(y = 0; y < image->height; y++) {
 		for(x = 0; x < image->width; x++) {
@@ -229,9 +262,17 @@ PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette) {
 PalettizedImage *ActuallyFloydSteinbergDither(RGBImage *image, RGBPalette *palette) {
 	int x, y;
 	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
+	if (NULL == retImg) {
+		fprintf(stderr, "failed to malloc retImg ActuallyFloydSteinbergDither\n");
+		exit(-1);
+	}
 	retImg->width = image->width;
 	retImg->height = image->height;
 	retImg->pixels = malloc(image->width * image->height);
+	if (NULL == retImg->pixels) {
+		fprintf(stderr, "failed to malloc retImg->pixels ActuallyFloydSteinbergDither\n");
+		exit(-1);
+	}
 	memset(retImg->pixels, 0, image->width * image->height);
 
 	for(y = 0; y < image->height; y++) {
@@ -258,9 +299,17 @@ PalettizedImage *FloydSteinbergDither(RGBImage *image, RGBPalette *palette) {
 #else
 	int x, y;
 	PalettizedImage *retImg = (PalettizedImage *)malloc(sizeof(PalettizedImage));
+	if (NULL == retImg) {
+		fprintf(stderr, "failed to malloc retImg FloydSteinbergDither\n");
+		exit(-1);
+	}
 	retImg->width = image->width;
 	retImg->height = image->height;
 	retImg->pixels = malloc(image->width * image->height);
+	if (NULL == retImg->pixels) {
+		fprintf(stderr, "failed to malloc retImg->pixels FloydSteinbergDither\n");
+		exit(-1);
+	}
 	memset(retImg->pixels, 0, image->width * image->height);
 
 	for(y = 0; y < image->height; y++) {
@@ -285,6 +334,10 @@ void Resize(PalettizedImage *image, int wp2, int hp2) {
 	int horig = image->height;
 
 	uint8_t *newpixels = malloc(wp2 * hp2);
+	if (NULL == newpixels) {
+		fprintf(stderr, "failed to malloc newpixels Resize\n");
+		exit(-1);
+	}
 	memset(newpixels, 0, wp2 * hp2);
 
 	for (int h=0;h<horig;h++) {
@@ -304,6 +357,10 @@ void Resize(PalettizedImage *image, int wp2, int hp2) {
 uint8_t *expand_4to8(uint8_t *src, int width, int height) {
 	int tmp, i;
 	uint8_t *buffer = malloc(width*height);
+	if (NULL == buffer) {
+		fprintf(stderr, "failed to malloc buffer expand_4to8\n");
+		exit(-1);
+	}
 	memset(buffer, 0, width*height);
 
 	// Decompress the sprite by taking one byte and turning it into two values
@@ -323,8 +380,16 @@ void unscramble(uint8_t *img, int width, int height, int tileheight, int compres
 	uint8_t *buffer;
 	int tmp,h,w,id,inv,pos;
 	tmp = 0;
-	h=0;w=0;id=0;inv=0;pos=0;
+	h=0;
+	w=0;
+	id=0;
+	inv=0;
+	pos=0;
 	buffer = malloc(width*height);
+	if (NULL == buffer) {
+		fprintf(stderr, "failed to malloc buffer unscramble\n");
+		exit(-1);
+	}
 	memset(buffer, 0, width*height);
 	for (h = 0; h < height; h++, id++) {
 		// Reset the check for flipped rows if its beginning on a new tile
