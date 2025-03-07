@@ -822,8 +822,9 @@ int main (int argc, char **argv)
 
 	memcpy((void*)lumpinfo, doom64wad + infotableofs, numlumps * sizeof(lumpinfo_t));
 
-	memset(allN64Textures, 0, sizeof(textureN64_t *) * NUMTEX);
 	memset(allImages, 0, sizeof(PalettizedImage *) * NUMSPRITE);
+	memset(allN64Textures, 0, sizeof(textureN64_t *) * NUMTEX);
+	memset(allSprites, 0, sizeof(spriteDC_t *) * (NUMSPRITE + NUMALTLUMPS));
 
 	init_gunpals();
 
