@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -18,7 +17,14 @@
 #define SHEET_DIM_SQUARED (SHEET_DIM*SHEET_DIM)
 #define REINDEX_FLATS 1
 #define GENERATE_BUMP_WAD 0
+
 #define ORIGINAL_DOOM64_WAD_SIZE 6101168
+#define NIGHTDIVE_WAD_SIZE 15103212
+
+#define NUMTEX 503
+#define NUMSPRITE 966
+// in `newlumpslist.h`
+//#define NUMALTLUMPS 311
 
 #define LUMP_S_START 0		
 #define LUMP_A001A0 1
@@ -43,6 +49,7 @@
 #include "textures.h"
 #endif
 
+
 char output_paths[1024];
 wadinfo_t wadfileptr;
 int infotableofs;
@@ -50,18 +57,26 @@ int numlumps;
 lumpinfo_t *lumpinfo;
 char identifier[4] = {'P','W','A','D'};
 uint8_t *doom64wad;
+
+// buffer large enough to hold any compressed lump (maps are the largest)
 #define LUMPDATASZ (256*1024)
 uint8_t lumpdata[LUMPDATASZ];
-#define NUMTEX 503
+
 short texIds[NUMTEX] = {0};
 short texWs[NUMTEX] = {0};
 short texHs[NUMTEX] = {0};
-#define NUMSPRITE 966
-#define NUMALTSPR 355
+
 PalettizedImage *allImages[NUMSPRITE];
-spriteDC_t *allSprites[NUMSPRITE + NUMALTSPR];
+spriteDC_t *allSprites[NUMSPRITE + NUMALTLUMPS];
+
 // this is used to see if `fromDoom64Sprite` is processing a card key or a dart
 int last_lump = -1;
+
+// common palettes
+RGBPalette enemyPal;
+RGBPalette nonEnemyPal;
+RGBPalette texPal;
+// weapon palettes
 RGBPalette sawgpal;
 RGBPalette pungpal;
 RGBPalette pisgpal;
@@ -74,36 +89,38 @@ RGBPalette bfggpal;
 RGBPalette lasrpal;
 
 
+void DecodeD64(unsigned char* input, unsigned char* output);
+unsigned char *EncodeD64(unsigned char* input, int inputlen, int* size);
 
-void DecodeD64(unsigned char* input, unsigned char* output); // 8002DFA0
-unsigned char* encoder__EncodeD64(unsigned char* input, int inputlen, int* size);
-unsigned char *encode(unsigned char *input, int inputlen, int *size);
-int decodedsize(unsigned char *input);
-void decode(unsigned char *input, unsigned char *output);
+void DecodeJaguar(unsigned char *input, unsigned char *output);
+unsigned char *EncodeJaguar(unsigned char *input, int inputlen, int *size);
+
 uint8_t *expand_4to8(uint8_t *src, int width, int height);
 void unscramble(uint8_t *img, int width, int height, int tileheight, int compressed);
-void convert(char *infn, char *outfn);
+
 RGBPalette *fromDoom64Palette(short *data, int count);
 RGBImage *fromDoom64Sprite(uint8_t *data, int w, int h, RGBPalette *pal);
 RGBImage *fromDoom64Texture(uint8_t *data, int w, int h, RGBPalette *pal);
 PalettizedImage *Palettize(RGBImage *image, RGBPalette *palette);
 void Resize(PalettizedImage *PalImg, int nw, int nh);
 
+// map conversion from "pc" to N64
+void convert(char *infn, char *outfn);
+
 
 void setup_pals(RGBPalette *cur_pal, RGBPalette *alt_pal, RGBPalette *alt_pal2, rawpal_t pal1, rawpal_t pal2, rawpal_t pal3)
 {
-	memcpy(&cur_pal->table[0].R, &pal1[0][0], sizeof(RGBTriple)*256);
+	cur_pal->table = (RGBTriple *)pal1;
 	if (alt_pal)
-		memcpy(&alt_pal->table[0].R, &pal2[0][0], sizeof(RGBTriple)*256);
+		alt_pal->table = (RGBTriple *)pal2;
 	if (alt_pal2)
-		memcpy(&alt_pal2->table[0].R, &pal3[0][0], sizeof(RGBTriple)*256);
+		alt_pal2->table = (RGBTriple *)pal3;
 }
 
 void setup_wepn_pal(RGBPalette *wepn_pal, void *paldata)
 {
 	RGBPalette *tmpPal = fromDoom64Palette((short *)paldata, 256);
-	memcpy(&wepn_pal->table[0].R, &tmpPal->table[0].R, sizeof(RGBTriple)*256);
-	free(tmpPal->table);
+	wepn_pal->table = tmpPal->table;
 	free(tmpPal);
 }
 
@@ -119,16 +136,6 @@ void init_gunpals(void)
 	plaspal.size = 256;
 	bfggpal.size = 256;
 	lasrpal.size = 256;
-	sawgpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	pungpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	pisgpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	sht1pal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	sht2pal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	chggpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	rockpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	plaspal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	bfggpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
-	lasrpal.table = (RGBTriple *)malloc(256*sizeof(RGBTriple));
 }
 
 void free_gunpals(void)
@@ -160,7 +167,6 @@ static inline uint32_t np2(uint32_t v)
 
 // https://github.com/KallistiOS/KallistiOS/blob/master/kernel/arch/dreamcast/hardware/pvr/pvr_texture.c
 // adapted from pvr_txr_load_ex
-/* Linear/iterative twiddling algorithm from Marcus' tatest */
 #define TWIDTAB(x) ( (x&1)|((x&2)<<1)|((x&4)<<2)|((x&8)<<3)|((x&16)<<4)| \
                      ((x&32)<<5)|((x&64)<<6)|((x&128)<<7)|((x&256)<<8)|((x&512)<<9) )
 #define TWIDOUT(x, y) ( TWIDTAB((y)) | (TWIDTAB((x)) << 1) )
@@ -202,20 +208,7 @@ void process_flats(void)
 {
 	int compressed = 0;
 	int copylen = 8;
-	char name[9];
-
-	memset(allN64Textures, 0, sizeof(textureN64_t *) * NUMTEX);
-
-	RGBPalette *texPal = (RGBPalette *)malloc(sizeof(RGBPalette));
-	texPal->size = 256;
-	texPal->table = (RGBTriple *)malloc(256 * sizeof(RGBTriple));
-	for (int i=0;i<256;i++) {
-		texPal->table[i].R = PALTEXCONV[i][0];
-		texPal->table[i].G = PALTEXCONV[i][1];
-		texPal->table[i].B = PALTEXCONV[i][2];
-	}
-
-
+	char __attribute__((aligned(4))) name[12];
 
 	for (int i = LUMP_C1; i < LUMP_FSKYA; i++) {
 		compressed = 0;
@@ -234,36 +227,36 @@ void process_flats(void)
 
 		name[0] &= 0x7f;
 
-		uint8_t *tmpdata = malloc(lumpinfo[i+1].filepos - lumpinfo[i].filepos);
-
-		if (NULL == tmpdata) {
-			fprintf(stderr, "Could not allocate tmpdata for lump %d.\n", i);
-			exit(-1);
-		}
-
-		memcpy(tmpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i+1].filepos - lumpinfo[i].filepos);
-		memset(lumpdata,0,LUMPDATASZ);
-
+		memset(lumpdata, 0, LUMPDATASZ);
 		if (compressed) {
+			uint8_t *tmpdata = malloc(lumpinfo[i+1].filepos - lumpinfo[i].filepos);
+			if (NULL == tmpdata) {
+				fprintf(stderr, "Could not allocate tmpdata for lump %d.\n", i);
+				exit(-1);
+			}
+			memcpy(tmpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i+1].filepos - lumpinfo[i].filepos);
 			DecodeD64(tmpdata, lumpdata);
+			free(tmpdata);
 		} else {
-			memcpy(lumpdata, tmpdata, lumpinfo[i].size);
+			memcpy(lumpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i].size);
 		}
 
-		free(tmpdata);
 
 		textureN64_t *txr = (textureN64_t *)lumpdata;
 		short id = SwapShort(txr->id);
-		texIds[TEXNUM(i)] = id;
 		short numpal = SwapShort(txr->numpal);
 		short wshift = SwapShort(txr->wshift);
-		texWs[TEXNUM(i)] = wshift;
 		short hshift = SwapShort(txr->hshift);
+
+		texIds[TEXNUM(i)] = id;
+		texWs[TEXNUM(i)] = wshift;
 		texHs[TEXNUM(i)] = hshift;
+
 		unsigned width = (1 << wshift);
 		unsigned height = (1 << hshift);
 		// size -- 4bpp
 		unsigned size = (width * height) >> 1;
+
 		// pixels start here
 		void *src = (void *)txr + sizeof(textureN64_t);
 
@@ -311,7 +304,7 @@ void process_flats(void)
 		RGBImage *curImg;
 		curPal = fromDoom64Palette(p, 16);
 		curImg = fromDoom64Texture(src, width, height, curPal);
-		PalettizedImage *palImg = Palettize(curImg, texPal);
+		PalettizedImage *palImg = Palettize(curImg, &texPal);
 
 		allN64Textures[TEXNUM(i)] = (textureN64_t *)malloc(sizeof(textureN64_t) + (palImg->width*palImg->height));
 		allN64Textures[TEXNUM(i)]->id = SwapShort(texIds[TEXNUM(i)]);
@@ -327,15 +320,445 @@ void process_flats(void)
 		free(curPal->table);
 		free(curPal);
 	}
-	free(texPal->table);
-	free(texPal);
 }
 #endif
 
-int main (int argc, char **argv)
+void process_4bit_sprites(void)
 {
 	int copylen = 8;
 	char __attribute__((aligned(4))) name[12];
+	// 1 - 346 are all 16 color sprites (6 of them are uncompressed lumps)
+	for (int i = LUMP_A001A0; i <= LUMP_LASSB0; i++) {
+		copylen = 8;
+		memset(name, 0, 9);
+		if (strlen(lumpinfo[i].name) < 8) {
+			copylen = strlen(lumpinfo[i].name);
+		}
+		memcpy(name, lumpinfo[i].name, copylen);
+
+		name[0] &= 0x7f;
+
+		last_lump = i;
+
+		memset(lumpdata, 0, LUMPDATASZ);
+
+		if (!(lumpinfo[i].name[0] & 0x80)) {
+			memcpy(lumpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i].size);
+		} else {
+			uint8_t *tmpdata = malloc(lumpinfo[i+1].filepos - lumpinfo[i].filepos);
+			if (NULL == tmpdata) {
+				fprintf(stderr, "Could not allocate tmpdata for lump %d.\n", i);
+				exit(-1);
+			}
+			memcpy(tmpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i+1].filepos - lumpinfo[i].filepos);
+			DecodeJaguar(tmpdata, lumpdata);
+			free(tmpdata);
+		}
+
+		spriteN64_t *sprite = (spriteN64_t *)lumpdata;
+
+		short compressed = SwapShort(sprite->compressed);
+		unsigned short cmpsize = (unsigned short)SwapShort(sprite->cmpsize);
+		unsigned short width = (unsigned short)SwapShort(sprite->width);
+		unsigned short height = (unsigned short)SwapShort(sprite->height);
+		short xoffs = (short)SwapShort(sprite->xoffs);
+		short yoffs = (short)SwapShort(sprite->yoffs);
+		unsigned short tileheight = (unsigned short)SwapShort(sprite->tileheight);
+		uint8_t *src = (uint8_t *)((uintptr_t)lumpdata + sizeof(spriteN64_t));
+
+		void *paldata;
+		RGBPalette *curPal;
+		RGBImage *curImg;
+
+		width = (width + 15) & ~15;
+		uint8_t *expandedimg = expand_4to8(src, width, height);
+		unscramble(expandedimg, width, height, tileheight, compressed);
+		paldata = (void*)sprite + sizeof(spriteN64_t) + cmpsize;
+		curPal = fromDoom64Palette((short *)paldata, 16);
+		curImg = fromDoom64Sprite(expandedimg, width, height, curPal);
+		free(expandedimg);
+
+		// 16 color sprites all end up in the sprite sheet texture
+		// these are header-only allocations and are written out to WAD header-only
+		allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
+
+		if (NULL == allSprites[i]) {
+			fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
+			exit(-1);
+		}
+
+		allSprites[i]->xoffs = xoffs;
+		allSprites[i]->yoffs = yoffs;
+		allSprites[i]->width = width;
+		allSprites[i]->height = height;
+		PalettizedImage *palImg;
+		palImg = Palettize(curImg, &nonEnemyPal);
+		allImages[i] = palImg;
+		free(curImg->pixels);
+		free(curImg);
+		free(curPal->table);
+		free(curPal);
+	}	
+}
+
+void process_8bit_sprites(void)
+{
+	int copylen = 8;
+	char __attribute__((aligned(4))) name[12];
+
+	RGBPalette basePal;
+	RGBPalette altPal;
+	RGBPalette altPal2;
+
+	// 347 - 923 are 256 color monster sprites except for entries starting with PAL
+	// 925 - 965 are 256 color psprite weapon sprites
+	// all of these sprites are compressed
+	for (int i = LUMP_SARGA1; i <= LUMP_LASRB0; i++) {
+		copylen = 8;
+		memset(name, 0, 9);
+		if (strlen(lumpinfo[i].name) < 8) {
+			copylen = strlen(lumpinfo[i].name);
+		}
+		memcpy(name, lumpinfo[i].name, copylen);
+		name[0] &= 0x7f;
+
+		// EXTERNAL MONSTER PALETTES, skip these
+		if (!strncmp("PAL", name, 3))
+			continue;
+
+		last_lump = i;
+
+		// these use external palettes
+		// SARG two pals 347 348		2
+		// PLAY three pals 395 396 397		2 + 3
+		// TROO two pals 448 449		5 + 2
+		// BOSS two pals 518 519		7 + 2
+		// FATT one pal 566			9 + 1
+		// SKUL one pal 618			10 + 1
+		// PAIN one pal 659			11 + 1
+		// BSPI one pal 688			12 + 1
+		// POSS two pals 725 726		13 + 2
+		// HEAD one pal 776			15 + 1
+		// CYBR one pal 818			16 + 1
+		// RECT one pal 876			17 + 1 == 18
+
+		uint8_t *tmpdata = malloc(lumpinfo[i+1].filepos - lumpinfo[i].filepos);
+		if (NULL == tmpdata) {
+			fprintf(stderr, "Could not allocate tmpdata for lump %d.\n", i);
+			exit(-1);
+		}
+		memcpy(tmpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i+1].filepos - lumpinfo[i].filepos);
+		memset(lumpdata,0,LUMPDATASZ);
+		DecodeJaguar(tmpdata, lumpdata);
+
+		spriteN64_t *sprite = (spriteN64_t *)lumpdata;
+		unsigned short tiles = (unsigned short)SwapShort(sprite->tiles) << 1;
+		short compressed = SwapShort(sprite->compressed);
+		unsigned short cmpsize = (unsigned short)SwapShort(sprite->cmpsize);
+		short xoffs = SwapShort(sprite->xoffs);
+		short yoffs = SwapShort(sprite->yoffs);
+		unsigned short width = (unsigned short)SwapShort(sprite->width);
+		unsigned short height = (unsigned short)SwapShort(sprite->height);
+		unsigned short tileheight = (unsigned short)SwapShort(sprite->tileheight);
+		uint8_t *src = (uint8_t *)((uintptr_t)lumpdata + sizeof(spriteN64_t));
+
+		void *paldata;
+
+		width = (width + 7) & ~7;
+		unscramble(src, width, height, tileheight, compressed);
+
+		// monster sprites
+		if ((cmpsize & 1) && (i <= LUMP_RECTO0)) {
+			char __attribute__((aligned(4))) first4[8];
+			uint32_t *f4p = (uint32_t *)first4;
+			memset(first4, 0, 8);
+			memcpy(first4, lumpinfo[i].name, 4);
+			first4[0] &= 0x7f;
+
+			basePal.size = 256;
+			altPal.size = 0;
+			altPal2.size = 0;
+
+			switch (*f4p) {
+				case 0x47524153: // SARG
+				altPal.size = 256;
+				setup_pals(&basePal, &altPal, NULL, PALSARG0, PALSARG1, NULL);
+				break;
+
+				case 0x59414c50: // PLAY
+				altPal.size = 256;
+				altPal2.size = 256;
+				setup_pals(&basePal, &altPal, &altPal2, PALPLAY0, PALPLAY1, PALPLAY2);
+				break;
+
+				case 0x4f4f5254: // TROO
+				altPal.size = 256;
+				setup_pals(&basePal, &altPal, NULL, PALTROO0, PALTROO1, NULL);
+				break;
+
+				case 0x53534f42: // BOSS
+				altPal.size = 256;
+				setup_pals(&basePal, &altPal, NULL, PALBOSS0, PALBOSS1, NULL);
+				break;
+
+				case 0x54544146: // FATT
+				setup_pals(&basePal, NULL, NULL, PALFATT0, NULL, NULL);
+				break;
+
+				case 0x4c554b53: // SKUL
+				setup_pals(&basePal, NULL, NULL, PALSKUL0, NULL, NULL);
+				break;
+
+				case 0x4e494150: // PAIN
+				setup_pals(&basePal, NULL, NULL, PALPAIN0, NULL, NULL);
+				break;
+
+				case 0x49505342: // BSPI
+				setup_pals(&basePal, NULL, NULL, PALBSPI0, NULL, NULL);
+				break;
+
+				case 0x53534f50: // POSS
+				altPal.size = 256;
+				setup_pals(&basePal, &altPal, NULL, PALPOSS0, PALPOSS1, NULL);
+				break;
+
+				case 0x44414548: // HEAD
+				setup_pals(&basePal, NULL, NULL, PALHEAD0, NULL, NULL);
+				break;
+
+				case 0x52425943: // CYBR
+				setup_pals(&basePal, NULL, NULL, PALCYBR0, NULL, NULL);
+				break;
+
+				case 0x54434552: // RECT
+				setup_pals(&basePal, NULL, NULL, PALRECT0, NULL, NULL);
+				break;
+
+				default:
+				break;
+			}
+
+			// PowerVR texture dimension requirements: power of two, no smaller than 8 pixels
+			// we end up padding the monster sprites significantly in some cases
+			// they compress reasonably well because they aren't dithered when they are re-indexed
+			// and long runs of zeros are decently handled
+			int wp2 = np2(width);
+			if(wp2 < 8) wp2 = 8;
+			int hp2 = np2(height);
+			if(hp2 < 8) hp2 = 8;
+
+			// current sprite with the default palette
+			RGBImage *curImg = fromDoom64Sprite(src, width, height, &basePal);
+			PalettizedImage *palImg = Palettize(curImg, &enemyPal);
+			Resize(palImg, wp2, hp2);
+
+			// if sprite has an alternate palette, this is first recolored sprite
+			RGBImage *altImg;
+			PalettizedImage *altPalImg;
+			if (altPal.size) {
+				altImg = fromDoom64Sprite(src, width, height, &altPal);
+				altPalImg = Palettize(altImg, &enemyPal);
+				Resize(altPalImg, wp2, hp2);
+			}
+
+			// PLAY* has two palettes, this is the second recolored player sprite
+			RGBImage *altImg2;
+			PalettizedImage *altPalImg2;
+			if (altPal2.size) {
+				altImg2 = fromDoom64Sprite(src, width, height, &altPal2);
+				altPalImg2 = Palettize(altImg2, &enemyPal);
+				Resize(altPalImg2, wp2, hp2);
+			}
+
+			allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
+			if (NULL == allSprites[i]) {
+				fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
+				exit(-1);
+			}
+
+			allSprites[i]->xoffs = xoffs;
+			allSprites[i]->yoffs = yoffs;
+			allSprites[i]->width = wp2;
+			allSprites[i]->height = hp2;
+			load_twid(allSprites[i]->data, palImg->pixels, wp2, hp2);
+			free(palImg->pixels);
+			free(palImg);
+
+			char __attribute__((aligned(4))) fullname[12];
+			uint32_t *fullp = (uint32_t *)fullname;
+			memset(fullname, 0, 12);
+			memcpy(fullname, lumpinfo[i].name, copylen);
+			fullname[0] &= 0x7f;
+			int altlumpnum = -1;
+			int altlumpnum2 = -1;
+
+			switch (*fullp) {
+				case 0x47524153: // SARG
+				*fullp = 0x43455053; // SPEC
+				altlumpnum = W_GetNumForName(fullname);
+				break;
+
+				case 0x4f4f5254: // TROO
+				*fullp = 0x4554494e; // NITE
+				altlumpnum = W_GetNumForName(fullname);
+				break;
+
+				case 0x53534f50: // POSS
+				*fullp = 0x424d4f5a; // ZOMB
+				altlumpnum = W_GetNumForName(fullname);
+				break;
+
+				case 0x53534f42: // BOSS
+				*fullp = 0x4f524142; // BARO
+				altlumpnum = W_GetNumForName(fullname);
+				break;
+
+				case 0x59414c50: // PLAY
+				*fullp = 0x31594C50; // PLY1 -> 0x30594C50 + (1 << 24)
+				altlumpnum = W_GetNumForName(fullname);
+				*fullp = 0x32594C50; // PLY2 -> 0x30594C50 + (2 << 24)
+				altlumpnum2 = W_GetNumForName(fullname);
+				break;
+
+				default:
+				break;
+			}
+
+			if (altlumpnum != -1) {
+				allSprites[altlumpnum] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
+				if (NULL == allSprites[altlumpnum]) {
+					fprintf(stderr, "Could not allocate sprite for alt lump %d.\n", altlumpnum);
+					exit(-1);
+				}
+				allSprites[altlumpnum]->xoffs = (xoffs);
+				allSprites[altlumpnum]->yoffs = (yoffs);
+				allSprites[altlumpnum]->width = (wp2);
+				allSprites[altlumpnum]->height = (hp2);
+				load_twid(allSprites[altlumpnum]->data, altPalImg->pixels, wp2, hp2);
+				free(altPalImg->pixels);
+				free(altPalImg);
+				free(altImg->pixels);
+				free(altImg);
+			}
+
+			if (altlumpnum2 != -1) {
+				allSprites[altlumpnum2] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
+				if (NULL == allSprites[altlumpnum2]) {
+					fprintf(stderr, "Could not allocate sprite for alt2 lump %d.\n", altlumpnum2);
+					exit(-1);
+				}
+				allSprites[altlumpnum2]->xoffs = (xoffs);
+				allSprites[altlumpnum2]->yoffs = (yoffs);
+				allSprites[altlumpnum2]->width = (wp2);
+				allSprites[altlumpnum2]->height = (hp2);
+				load_twid(allSprites[altlumpnum2]->data, altPalImg2->pixels, wp2, hp2);
+				free(altPalImg2->pixels);
+				free(altPalImg2);
+				free(altImg2->pixels);
+				free(altImg2);
+			}
+
+			free(curImg->pixels);
+			free(curImg);
+		} else {
+			// the weapons are in this block
+			RGBPalette *wepnPal;
+			paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
+
+			if (!(strncmp(name,"SAWGA0",6))) {
+				setup_wepn_pal(&sawgpal, paldata);
+			} else if (!(strncmp(name, "PUNGA0", 6))) {
+				setup_wepn_pal(&pungpal, paldata);
+			} else if (!(strncmp(name, "PISGA0", 6))) {
+				setup_wepn_pal(&pisgpal, paldata);
+			} else if (!(strncmp(name, "SHT1A0", 6))) {
+				setup_wepn_pal(&sht1pal, paldata);
+			} else if (!(strncmp(name, "SHT2A0", 6))) {
+				setup_wepn_pal(&sht2pal, paldata);
+			} else if (!(strncmp(name, "CHGGA0", 6))) {
+				setup_wepn_pal(&chggpal, paldata);
+			} else if (!(strncmp(name, "ROCKA0", 6))) {
+				setup_wepn_pal(&rockpal, paldata);
+			} else if (!(strncmp(name, "PLASA0", 6))) {
+				setup_wepn_pal(&plaspal, paldata);
+			} else if (!(strncmp(name, "BFGGA0", 6))) {
+				setup_wepn_pal(&bfggpal, paldata);
+			} else if (!(strncmp(name, "LASRA0", 6))) {
+				setup_wepn_pal(&lasrpal, paldata);
+			}
+
+			uint32_t *namep = (uint32_t *)name;
+
+			switch (*namep) {
+				case 0x47574153: // SAWG
+				wepnPal = &sawgpal;
+				break;
+
+				case 0x474e5550: // PUNG
+				wepnPal = &pungpal;
+				break;
+
+				case 0x47534950: // PISG
+				wepnPal = &pisgpal;
+				break;
+
+				case 0x31544853: // SHT1
+				wepnPal = &sht1pal;
+				break;
+
+				case 0x32544853: // SHT2
+				wepnPal = &sht2pal;
+				break;
+
+				case 0x47474843: // CHGG
+				wepnPal = &chggpal;
+				break;
+
+				case 0x4b434f52: // ROCK
+				wepnPal = &rockpal;
+				break;
+
+				case 0x53414c50: // PLAS
+				wepnPal = &plaspal;
+				break;
+
+				case 0x47474642: // BFGG
+				wepnPal = &bfggpal;
+				break;
+
+				case 0x5253414c: // LASR
+				wepnPal = &lasrpal;
+				break;
+
+				default:
+				break;
+			}
+
+			// psprites/weapons all end up in the sprite sheet texture
+			// these are header-only allocations and are written out to WAD header-only
+			allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
+			if (NULL == allSprites[i]) {
+				fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
+				exit(-1);
+			}
+
+			allSprites[i]->xoffs = xoffs;
+			allSprites[i]->yoffs = yoffs;
+			allSprites[i]->width = width;
+			allSprites[i]->height = height;
+
+			RGBImage *curImg = fromDoom64Sprite(src, width, height, wepnPal);
+			PalettizedImage *palImg = Palettize(curImg, &nonEnemyPal);
+			allImages[i] = palImg;
+			free(curImg->pixels);
+			free(curImg);
+		}
+		free(tmpdata);
+	}
+}
+
+int main (int argc, char **argv)
+{
 	char *path_to_rom = argv[1];
 	char *output_directory = argv[2];
 
@@ -349,43 +772,6 @@ int main (int argc, char **argv)
 	if (NULL == z64_fd) {
 		fprintf(stderr, "Could not open Doom 64 ROM for reading.\n");
 		exit(-1);
-	}
-
-	init_gunpals();
-	memset(allImages, 0, sizeof(PalettizedImage *) * NUMSPRITE);
-
-	RGBPalette *nonEnemyPal = (RGBPalette *)malloc(sizeof(RGBPalette));
-	if (NULL == nonEnemyPal) {
-		fprintf(stderr, "Could not allocate common non-enemy palette.\n");
-		exit(-1);
-	}
-	nonEnemyPal->size = 256;
-	nonEnemyPal->table = (RGBTriple *)malloc(256 * sizeof(RGBTriple));
-	if (NULL == nonEnemyPal->table) {
-		fprintf(stderr, "Could not allocate color table for common non-enemy palette.\n");
-		exit(-1);
-	}
-	for (int ci=0;ci<256;ci++) {
-		nonEnemyPal->table[ci].R = D64NONENEMY[ci][0];
-		nonEnemyPal->table[ci].G = D64NONENEMY[ci][1];
-		nonEnemyPal->table[ci].B = D64NONENEMY[ci][2];
-	}
-
-	RGBPalette *enemyPal = (RGBPalette *)malloc(sizeof(RGBPalette));
-	if (NULL == enemyPal) {
-		fprintf(stderr, "Could not allocate common enemy palette.\n");
-		exit(-1);
-	}
-	enemyPal->size = 256;
-	enemyPal->table = (RGBTriple *)malloc(256 * sizeof(RGBTriple));
-	if (NULL == enemyPal->table) {
-		fprintf(stderr, "Could not allocate color table for common enemy palette.\n");
-		exit(-1);
-	}
-	for (int ci=0;ci<256;ci++) {
-		enemyPal->table[ci].R = D64MONSTER[ci][0];
-		enemyPal->table[ci].G = D64MONSTER[ci][1];
-		enemyPal->table[ci].B = D64MONSTER[ci][2];
 	}
 
 	int z64_seek_rv = fseek(z64_fd, 408848, SEEK_SET);
@@ -436,468 +822,27 @@ int main (int argc, char **argv)
 
 	memcpy((void*)lumpinfo, doom64wad + infotableofs, numlumps * sizeof(lumpinfo_t));
 
+	memset(allN64Textures, 0, sizeof(textureN64_t *) * NUMTEX);
+	memset(allImages, 0, sizeof(PalettizedImage *) * NUMSPRITE);
+
+	init_gunpals();
+
+	texPal.size = 256;
+	texPal.table = (RGBTriple *)PALTEXCONV;
+
+	nonEnemyPal.size = 256;
+	nonEnemyPal.table = (RGBTriple *)D64NONENEMY;
+
+	enemyPal.size = 256;
+	enemyPal.table = (RGBTriple *)D64MONSTER;
+
 #if REINDEX_FLATS
-		process_flats();
+	process_flats();
 #endif
 
-	// 1 - 346 are all 16 color sprites (6 of them are uncompressed lumps)
-	for (int i = LUMP_A001A0; i <= LUMP_LASSB0; i++) {
-		copylen = 8;
-		memset(name, 0, 9);
-		if (strlen(lumpinfo[i].name) < 8) {
-			copylen = strlen(lumpinfo[i].name);
-		}
-		memcpy(name, lumpinfo[i].name, copylen);
+	process_4bit_sprites();
 
-		name[0] &= 0x7f;
-
-		last_lump = i;
-
-		memset(lumpdata, 0, LUMPDATASZ);
-
-		if (!(lumpinfo[i].name[0] & 0x80)) {
-			memcpy(lumpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i].size);
-		} else {
-			uint8_t *tmpdata = malloc(lumpinfo[i+1].filepos - lumpinfo[i].filepos);
-			if (NULL == tmpdata) {
-				fprintf(stderr, "Could not allocate tmpdata for lump %d.\n", i);
-				exit(-1);
-			}
-			memcpy(tmpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i+1].filepos - lumpinfo[i].filepos);
-			decode(tmpdata, lumpdata);
-			free(tmpdata);
-		}
-
-		spriteN64_t *sprite = (spriteN64_t *)lumpdata;
-
-		short compressed = SwapShort(sprite->compressed);
-		unsigned short cmpsize = (unsigned short)SwapShort(sprite->cmpsize);
-		unsigned short width = (unsigned short)SwapShort(sprite->width);
-		unsigned short height = (unsigned short)SwapShort(sprite->height);
-		short xoffs = (short)SwapShort(sprite->xoffs);
-		short yoffs = (short)SwapShort(sprite->yoffs);
-		unsigned short tileheight = (unsigned short)SwapShort(sprite->tileheight);
-		uint8_t *src = (uint8_t *)((uintptr_t)lumpdata + sizeof(spriteN64_t));
-
-		void *paldata;
-		RGBPalette *curPal;
-		RGBImage *curImg;
-
-		width = (width + 15) & ~15;
-		uint8_t *expandedimg = expand_4to8(src, width, height);
-		unscramble(expandedimg, width, height, tileheight, compressed);
-		paldata = (void*)sprite + sizeof(spriteN64_t) + cmpsize;
-		curPal = fromDoom64Palette((short *)paldata, 16);
-		curImg = fromDoom64Sprite(expandedimg, width, height, curPal);
-		free(expandedimg);
-
-		// 16 color sprites all end up in the sprite sheet texture
-		// these are header-only allocations and are written out to WAD header-only
-		allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
-
-		if (NULL == allSprites[i]) {
-			fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
-			exit(-1);
-		}
-
-		allSprites[i]->xoffs = xoffs;
-		allSprites[i]->yoffs = yoffs;
-		allSprites[i]->width = width;
-		allSprites[i]->height = height;
-		PalettizedImage *palImg;
-		palImg = Palettize(curImg, nonEnemyPal);
-		allImages[i] = palImg;
-		free(curImg->pixels);
-		free(curImg);
-		free(curPal->table);
-		free(curPal);
-	}
-
-	// 347 - 923 are 256 color monster sprites except for entries starting with PAL
-	// 925 - 965 are 256 color psprite weapon sprites
-	// all of these sprites are compressed
-	for (int i = LUMP_SARGA1; i <= LUMP_LASRB0; i++) {
-		copylen = 8;
-		memset(name, 0, 9);
-		if (strlen(lumpinfo[i].name) < 8) {
-			copylen = strlen(lumpinfo[i].name);
-		}
-		memcpy(name, lumpinfo[i].name, copylen);
-		name[0] &= 0x7f;
-
-		// EXTERNAL MONSTER PALETTES, skip these
-		if (!memcmp("PAL", name, 3))
-			continue;
-
-		last_lump = i;
-
-		// these use external palettes
-		// SARG two pals 347 348		2
-		// PLAY three pals 395 396 397		2 + 3
-		// TROO two pals 448 449		5 + 2
-		// BOSS two pals 518 519		7 + 2
-		// FATT one pal 566			9 + 1
-		// SKUL one pal 618			10 + 1
-		// PAIN one pal 659			11 + 1
-		// BSPI one pal 688			12 + 1
-		// POSS two pals 725 726		13 + 2
-		// HEAD one pal 776			15 + 1
-		// CYBR one pal 818			16 + 1
-		// RECT one pal 876			17 + 1 == 18
-
-		uint8_t *tmpdata = malloc(lumpinfo[i+1].filepos - lumpinfo[i].filepos);
-		if (NULL == tmpdata) {
-			fprintf(stderr, "Could not allocate tmpdata for lump %d.\n", i);
-			exit(-1);
-		}
-		memcpy(tmpdata, doom64wad + lumpinfo[i].filepos, lumpinfo[i+1].filepos - lumpinfo[i].filepos);
-		memset(lumpdata,0,LUMPDATASZ);
-		decode(tmpdata, lumpdata);
-
-		spriteN64_t *sprite = (spriteN64_t *)lumpdata;
-		unsigned short tiles = (unsigned short)SwapShort(sprite->tiles) << 1;
-		short compressed = SwapShort(sprite->compressed);
-		unsigned short cmpsize = (unsigned short)SwapShort(sprite->cmpsize);
-		short xoffs = SwapShort(sprite->xoffs);
-		short yoffs = SwapShort(sprite->yoffs);
-		unsigned short width = (unsigned short)SwapShort(sprite->width);
-		unsigned short height = (unsigned short)SwapShort(sprite->height);
-		unsigned short tileheight = (unsigned short)SwapShort(sprite->tileheight);
-		uint8_t *src = (uint8_t *)((uintptr_t)lumpdata + sizeof(spriteN64_t));
-
-		void *paldata;
-		int usePal1 = 0;
-		int usePal2 = 0;
-
-		width = (width + 7) & ~7;
-		unscramble(src, width, height, tileheight, compressed);
-
-		// monster sprites
-		if ((cmpsize & 1) && (i <= LUMP_RECTO0)) {
-			char __attribute__((aligned(4))) first4[8];
-			uint32_t *f4p = (uint32_t *)first4;
-			memset(first4, 0, 8);
-			memcpy(first4, lumpinfo[i].name, 4);
-			first4[0] &= 0x7f;
-
-			RGBPalette *curPal = (RGBPalette *)malloc(sizeof(RGBPalette));
-			if (NULL == curPal) {
-				fprintf(stderr, "Could not allocate curPal for lump %d.\n", i);
-				exit(-1);
-			}
-			curPal->size = 256;
-			curPal->table = (RGBTriple *)malloc(256 * sizeof(RGBTriple));
-			if (NULL == curPal->table) {
-				fprintf(stderr, "Could not allocate curPal color table for lump %d.\n", i);
-				exit(-1);
-			}
-
-			RGBPalette *altPal = (RGBPalette *)malloc(sizeof(RGBPalette));
-			if (NULL == altPal) {
-				fprintf(stderr, "Could not allocate altPal for lump %d.\n", i);
-				exit(-1);
-			}
-			altPal->size = 256;
-			altPal->table = (RGBTriple *)malloc(256 * sizeof(RGBTriple));
-			if (NULL == altPal->table) {
-				fprintf(stderr, "Could not allocate altPal color table for lump %d.\n", i);
-				exit(-1);
-			}
-
-			RGBPalette *altPal2 = (RGBPalette *)malloc(sizeof(RGBPalette));
-			if (NULL == altPal2) {
-				fprintf(stderr, "Could not allocate altPal2 for lump %d.\n", i);
-				exit(-1);
-			}
-			altPal2->size = 256;
-			altPal2->table = (RGBTriple *)malloc(256 * sizeof(RGBTriple));
-			if (NULL == altPal2->table) {
-				fprintf(stderr, "Could not allocate altPal2 color table for lump %d.\n", i);
-				exit(-1);
-			}
-
-			switch (*f4p) {
-				case 0x47524153: // SARG
-				usePal1 = 1;
-				setup_pals(curPal, altPal, NULL, PALSARG0, PALSARG1, NULL);
-				break;
-
-				case 0x59414c50: // PLAY
-				usePal1 = 1;
-				usePal2 = 1;
-				setup_pals(curPal, altPal, altPal2, PALPLAY0, PALPLAY1, PALPLAY2);
-				break;
-
-				case 0x4f4f5254: // TROO
-				usePal1 = 1;
-				setup_pals(curPal, altPal, NULL, PALTROO0, PALTROO1, NULL);
-				break;
-
-				case 0x53534f42: // BOSS
-				usePal1 = 1;
-				setup_pals(curPal, altPal, NULL, PALBOSS0, PALBOSS1, NULL);
-				break;
-
-				case 0x54544146: // FATT
-				setup_pals(curPal, NULL, NULL, PALFATT0, NULL, NULL);
-				break;
-
-				case 0x4c554b53: // SKUL
-				setup_pals(curPal, NULL, NULL, PALSKUL0, NULL, NULL);
-				break;
-
-				case 0x4e494150: // PAIN
-				setup_pals(curPal, NULL, NULL, PALPAIN0, NULL, NULL);
-				break;
-
-				case 0x49505342: // BSPI
-				setup_pals(curPal, NULL, NULL, PALBSPI0, NULL, NULL);
-				break;
-
-				case 0x53534f50: // POSS
-				usePal1 = 1;
-				setup_pals(curPal, altPal, NULL, PALPOSS0, PALPOSS1, NULL);
-				break;
-
-				case 0x44414548: // HEAD
-				setup_pals(curPal, NULL, NULL, PALHEAD0, NULL, NULL);
-				break;
-
-				case 0x52425943: // CYBR
-				setup_pals(curPal, NULL, NULL, PALCYBR0, NULL, NULL);
-				break;
-
-				case 0x54434552: // RECT
-				setup_pals(curPal, NULL, NULL, PALRECT0, NULL, NULL);
-				break;
-
-				default:
-				break;
-			}
-
-			// PowerVR texture dimension requirements: power of two, no smaller than 8 pixels
-			// we end up padding the monster sprites significantly in some cases
-			// they compress reasonably well because they aren't dithered when they are re-indexed
-			// and long runs of zeros are decently handled
-			int wp2 = np2(width);
-			if(wp2 < 8) wp2 = 8;
-			int hp2 = np2(height);
-			if(hp2 < 8) hp2 = 8;
-
-			// current sprite with the default palette
-			RGBImage *curImg = fromDoom64Sprite(src, width, height, curPal);
-			PalettizedImage *palImg = Palettize(curImg, enemyPal);
-			Resize(palImg, wp2, hp2);
-
-			// if sprite has an alternate palette, this is first recolored sprite
-			RGBImage *altImg;
-			PalettizedImage *altPalImg;
-			if (usePal1) {
-				altImg = fromDoom64Sprite(src, width, height, altPal);
-				altPalImg = Palettize(altImg, enemyPal);
-				Resize(altPalImg, wp2, hp2);
-			}
-
-			// PLAY* has two palettes, this is the second recolored player sprite
-			RGBImage *altImg2;
-			PalettizedImage *altPalImg2;
-			if (usePal2) {
-				altImg2 = fromDoom64Sprite(src, width, height, altPal2);
-				altPalImg2 = Palettize(altImg2, enemyPal);
-				Resize(altPalImg2, wp2, hp2);
-			}
-
-			allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
-			if (NULL == allSprites[i]) {
-				fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
-				exit(-1);
-			}
-
-			allSprites[i]->xoffs = xoffs;
-			allSprites[i]->yoffs = yoffs;
-			allSprites[i]->width = wp2;
-			allSprites[i]->height = hp2;
-			load_twid(allSprites[i]->data, palImg->pixels, wp2, hp2);
-			free(palImg->pixels);
-			free(palImg);
-
-			char __attribute__((aligned(4))) fullname[12];
-			uint32_t *fullp = (uint32_t *)fullname;
-			memset(fullname, 0, 12);
-			memcpy(fullname, lumpinfo[i].name, copylen);
-			fullname[0] &= 0x7f;
-			int altlumpnum = -1;
-			int altlumpnum2 = -1;
-
-			switch (*fullp) {
-				case 0x47524153: // SARG
-				*fullp = 0x43455053; // SPEC
-				altlumpnum = W_GetNumForName(fullname);
-				break;
-
-				case 0x4f4f5254: // TROO
-				*fullp = 0x4554494e; // NITE
-				altlumpnum = W_GetNumForName(fullname);
-				break;
-
-				case 0x53534f50: // POSS
-				*fullp = 0x424d4f5a; // ZOMB
-				altlumpnum = W_GetNumForName(fullname);
-				break;
-
-				case 0x53534f42: // BOSS
-				*fullp = 0x4f524142; // BARO
-				altlumpnum = W_GetNumForName(fullname);
-				break;
-
-				case 0x59414c50: // PLAY
-				*fullp = 0x30594C50 + (1 << 24); // PLY1
-				altlumpnum = W_GetNumForName(fullname);
-				*fullp = 0x30594C50 + (2 << 24); // PLY2
-				altlumpnum2 = W_GetNumForName(fullname);
-				break;
-
-				default:
-				break;
-			}
-
-			if (altlumpnum != -1) {
-				allSprites[altlumpnum] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
-				if (NULL == allSprites[altlumpnum]) {
-					fprintf(stderr, "Could not allocate sprite for alt lump %d.\n", altlumpnum);
-					exit(-1);
-				}
-				allSprites[altlumpnum]->xoffs = (xoffs);
-				allSprites[altlumpnum]->yoffs = (yoffs);
-				allSprites[altlumpnum]->width = (wp2);
-				allSprites[altlumpnum]->height = (hp2);
-				load_twid(allSprites[altlumpnum]->data, altPalImg->pixels, wp2, hp2);
-				free(altPalImg->pixels);
-				free(altPalImg);
-				free(altImg->pixels);
-				free(altImg);
-			}
-
-			if (altlumpnum2 != -1) {
-				allSprites[altlumpnum2] = (spriteDC_t *)malloc(sizeof(spriteDC_t) + (wp2*hp2));
-				if (NULL == allSprites[altlumpnum2]) {
-					fprintf(stderr, "Could not allocate sprite for alt2 lump %d.\n", altlumpnum2);
-					exit(-1);
-				}
-				allSprites[altlumpnum2]->xoffs = (xoffs);
-				allSprites[altlumpnum2]->yoffs = (yoffs);
-				allSprites[altlumpnum2]->width = (wp2);
-				allSprites[altlumpnum2]->height = (hp2);
-				load_twid(allSprites[altlumpnum2]->data, altPalImg2->pixels, wp2, hp2);
-				free(altPalImg2->pixels);
-				free(altPalImg2);
-				free(altImg2->pixels);
-				free(altImg2);
-			}
-
-			free(curImg->pixels);
-			free(curImg);
-			free(curPal->table);
-			free(curPal);
-			free(altPal->table);
-			free(altPal);
-			free(altPal2->table);
-			free(altPal2);
-		} else {
-			// the weapons are in this block
-			RGBPalette *curPal;
-			paldata = (void*)sprite + sizeof(spriteN64_t) + (cmpsize);
-
-			if (!(memcmp(name,"SAWGA0",6))) {
-				setup_wepn_pal(&sawgpal, paldata);
-			} else if (!(memcmp(name, "PUNGA0", 6))) {
-				setup_wepn_pal(&pungpal, paldata);
-			} else if (!(memcmp(name, "PISGA0", 6))) {
-				setup_wepn_pal(&pisgpal, paldata);
-			} else if (!(memcmp(name, "SHT1A0", 6))) {
-				setup_wepn_pal(&sht1pal, paldata);
-			} else if (!(memcmp(name, "SHT2A0", 6))) {
-				setup_wepn_pal(&sht2pal, paldata);
-			} else if (!(memcmp(name, "CHGGA0", 6))) {
-				setup_wepn_pal(&chggpal, paldata);
-			} else if (!(memcmp(name, "ROCKA0", 6))) {
-				setup_wepn_pal(&rockpal, paldata);
-			} else if (!(memcmp(name, "PLASA0", 6))) {
-				setup_wepn_pal(&plaspal, paldata);
-			} else if (!(memcmp(name, "BFGGA0", 6))) {
-				setup_wepn_pal(&bfggpal, paldata);
-			} else if (!(memcmp(name, "LASRA0", 6))) {
-				setup_wepn_pal(&lasrpal, paldata);
-			}
-
-			uint32_t *namep = (uint32_t *)name;
-
-			switch (*namep) {
-				case 0x47574153: // SAWG
-				curPal = &sawgpal;
-				break;
-
-				case 0x474e5550: // PUNG
-				curPal = &pungpal;
-				break;
-
-				case 0x47534950: // PISG
-				curPal = &pisgpal;
-				break;
-
-				case 0x31544853: // SHT1
-				curPal = &sht1pal;
-				break;
-
-				case 0x32544853: // SHT2
-				curPal = &sht2pal;
-				break;
-
-				case 0x47474843: // CHGG
-				curPal = &chggpal;
-				break;
-
-				case 0x4b434f52: // ROCK
-				curPal = &rockpal;
-				break;
-
-				case 0x53414c50: // PLAS
-				curPal = &plaspal;
-				break;
-
-				case 0x47474642: // BFGG
-				curPal = &bfggpal;
-				break;
-
-				case 0x5253414c: // LASR
-				curPal = &lasrpal;
-				break;
-
-				default:
-				break;
-			}
-
-			// psprites/weapons all end up in the sprite sheet texture
-			// these are header-only allocations and are written out to WAD header-only
-			allSprites[i] = (spriteDC_t *)malloc(sizeof(spriteDC_t));
-			if (NULL == allSprites[i]) {
-				fprintf(stderr, "Could not allocate sprite for lump %d.\n", i);
-				exit(-1);
-			}
-
-			allSprites[i]->xoffs = xoffs;
-			allSprites[i]->yoffs = yoffs;
-			allSprites[i]->width = width;
-			allSprites[i]->height = height;
-
-			RGBImage *curImg = fromDoom64Sprite(src, width, height, curPal);
-			PalettizedImage *palImg = Palettize(curImg, nonEnemyPal);
-			allImages[i] = palImg;
-			free(curImg->pixels);
-			free(curImg);
-		}
-		free(tmpdata);
-	}
+	process_8bit_sprites();
 
 	// anything that is a sprite and not a monster gets put in a single 1024^2 texture
 	// it is laid out according to a long-ago pre-generated sprite sheet
@@ -923,8 +868,8 @@ int main (int argc, char **argv)
 			exit(-1);
 		}
 
-		for (int k=y;k<y+h;k++) {
-			for (int j=x;j<x+w;j++) {
+		for (int k = y; k < y + h; k++) {
+			for (int j = x; j < x + w; j++) {
 				ne_sheet[(k*SHEET_DIM) + j] = lumpImg->pixels[((k-y)*w) + (j-x)];
 			}
 		}
@@ -1004,9 +949,12 @@ int main (int argc, char **argv)
 
 	int lastofs = 4 + 4 + 4 + 4;
 
-	for (int i=0;i<numlumps;i++) {
-		if (i == LUMP_S_START) continue;
-		if ((i >= LUMP_MAP01) && (i <= LUMP_MAP33)) continue;
+	for (int i = 0; i < numlumps; i++) {
+		if (i == LUMP_S_START)
+			continue;
+
+		if ((i >= LUMP_MAP01) && (i <= LUMP_MAP33))
+			continue;
 
 #if REINDEX_FLATS
 		// any flat that used a single palette is written to wad as compressed, 8bpp, twiddled, D64-encoded
@@ -1015,9 +963,18 @@ int main (int argc, char **argv)
 			int outlen;
 			int wp2 = 1 << SwapShort(allN64Textures[TEXNUM(i)]->wshift);
 			int hp2 = 1 << SwapShort(allN64Textures[TEXNUM(i)]->hshift);
-			outbuf = encoder__EncodeD64((void *)allN64Textures[TEXNUM(i)], sizeof(textureN64_t) + (wp2*hp2), &outlen);
+			outbuf = EncodeD64((void *)allN64Textures[TEXNUM(i)], sizeof(textureN64_t) + (wp2*hp2), &outlen);
 			free(outbuf);
 			int orig_size = outlen;
+			int padded_size = (orig_size + 7) & ~7;
+			lastofs = lastofs + padded_size;
+		}
+#else
+		else if (i >= LUMP_C1 && i < LUMP_FSKYA) {
+			int orig_size = lumpinfo[i].size;
+			if (lumpinfo[i].name[0] & 0x80) {
+				orig_size = lumpinfo[i+1].filepos - lumpinfo[i].filepos;
+			}
 			int padded_size = (orig_size + 7) & ~7;
 			lastofs = lastofs + padded_size;
 		}
@@ -1034,8 +991,7 @@ int main (int argc, char **argv)
 		// palettes are written to wad as "pass-through"
 		// SYMBOLS/STATUS/SFONT are written to wad as "pass-through"
 		// demos are written to wad as "pass-through"
-	 	else if ((i > LUMP_LASRB0) || !memcmp(names[i], "PAL", 3)) {
-		//((names[i][0] == 'P') && (names[i][1] == 'A') && (names[i][2] == 'L')) ) {
+	 	else if ((i > LUMP_LASRB0) || !strncmp(names[i], "PAL", 3)) {
 			int orig_size = lumpinfo[i].size;
 			if (lumpinfo[i].name[0] & 0x80) {
 				orig_size = lumpinfo[i+1].filepos - lumpinfo[i].filepos;
@@ -1043,7 +999,7 @@ int main (int argc, char **argv)
 			int padded_size = (orig_size + 7) & ~7;
 			lastofs = lastofs + padded_size;
 		}
-		
+
 		// enemy sprites are encoded as a new, smaller spriteDC_t type with header AND data,
 		//		8bpp, common palette, compressed and Jaguar encoded
 		else {
@@ -1051,7 +1007,7 @@ int main (int argc, char **argv)
 			int outlen;
 			int wp2 = (allSprites[i]->width);
 			int hp2 = (allSprites[i]->height);
-			outbuf = encode((void *)allSprites[i], sizeof(spriteDC_t) + (wp2*hp2), &outlen);
+			outbuf = EncodeJaguar((void *)allSprites[i], sizeof(spriteDC_t) + (wp2*hp2), &outlen);
 			free(outbuf);
 			int orig_size = outlen;
 			int padded_size = (orig_size + 7) & ~7;
@@ -1072,9 +1028,8 @@ int main (int argc, char **argv)
 
 	lastofs = 16;
 
-	for (int i=0;i<numlumps;i++) {
-		if (((i < LUMP_SARGA1) || (i > LUMP_RECTO0)) || !memcmp(names[i], "PAL", 3)) {
-			//((names[i][0] == 'P') && (names[i][1] == 'A') && (names[i][2] == 'L'))) {
+	for (int i = 0; i <numlumps; i++) {
+		if (((i < LUMP_SARGA1) || (i > LUMP_RECTO0)) || !strncmp(names[i], "PAL", 3)) {
 			int data_size;
 			int orig_size = lumpinfo[i].size;
 			data_size = orig_size;
@@ -1127,7 +1082,7 @@ int main (int argc, char **argv)
 				int fileLen;
 				int origLen = sizeof(textureN64_t) + (wp2*hp2);
 				lumpinfo[i].name[0] |= 0x80;
-				outbuf = encoder__EncodeD64((void *)allN64Textures[TEXNUM(i)], origLen, &outlen);
+				outbuf = EncodeD64((void *)allN64Textures[TEXNUM(i)], origLen, &outlen);
 				fileLen = outlen;
 				int orig_size = fileLen;
 				int padded_size = (orig_size + 7) & ~7;
@@ -1138,6 +1093,19 @@ int main (int argc, char **argv)
 				lumpinfo[i].filepos = lastofs;
 				lumpinfo[i].size = origLen;
 				lastofs = lastofs + padded_size;
+			}
+#else
+			else if (i >= LUMP_C1 && i < LUMP_FSKYA) {
+				if (lumpinfo[i].name[0] & 0x80) {
+					data_size = lumpinfo[i+1].filepos - lumpinfo[i].filepos;
+				}
+				memset(lumpdata, 0, LUMPDATASZ);
+				memcpy(lumpdata, doom64wad + lumpinfo[i].filepos, data_size);
+				data_size = (data_size + 7) & ~7;
+				fwrite(lumpdata, 1, data_size, fd);
+				lumpinfo[i].filepos = lastofs;
+				lumpinfo[i].size = orig_size;
+				lastofs = lastofs + data_size;
 			}
 #endif
 
@@ -1161,7 +1129,7 @@ int main (int argc, char **argv)
 				int hp2 = (allSprites[i]->height);
 				int fileLen;
 				int origLen = sizeof(spriteDC_t) + (wp2*hp2);
-				outbuf = encode((void *)allSprites[i], origLen, &outlen);
+				outbuf = EncodeJaguar((void *)allSprites[i], origLen, &outlen);
 				fileLen = outlen;
 				int orig_size = fileLen;
 				int padded_size = (orig_size + 7) & ~7;
@@ -1179,18 +1147,17 @@ int main (int argc, char **argv)
 		}
 	}
 
-	for (int i=0;i<numlumps;i++) {
+	for (int i = 0; i < numlumps; i++) {
 		if ((i >= LUMP_MAP01) && (i <= LUMP_MAP33)) continue;
 
 		fwrite((void*)(&lumpinfo[i]), 1, sizeof(lumpinfo_t), fd);
 	}
 	fclose(fd);
 
-#define NUMALTLUMPS 311
 	char pwad[4] = {'P','W','A','D'};
 	sprintf(output_paths, "%s/alt.wad", output_directory);
 	FILE *alt_fd = fopen(output_paths, "wb");
-	for (int i=0;i<4;i++) {
+	for (int i = 0; i < 4; i++) {
 		fwrite(&pwad[i], 1, 1, alt_fd);
 	}
 	int numaltlumps = NUMALTLUMPS;
@@ -1202,7 +1169,7 @@ int main (int argc, char **argv)
 		exit(-1);
 	}
 
-	for (int i=0;i<numaltlumps;i++) {
+	for (int i = 0; i < numaltlumps; i++) {
 		memset(altlumpinfo[i].name, 0, 8);
 		memcpy(altlumpinfo[i].name, newlumps[i], strlen(newlumps[i]));
 		if (newlumps[i][0] != 'S' || (newlumps[i][0] == 'S' && newlumps[i][1] != '2')) {
@@ -1220,7 +1187,7 @@ int main (int argc, char **argv)
 			int hp2 = (allSprites[altlumpnum]->height);
 			int fileLen;
 			int origLen = sizeof(spriteDC_t) + (wp2*hp2);
-			outbuf = encode((void *)allSprites[altlumpnum], origLen, &outlen);
+			outbuf = EncodeJaguar((void *)allSprites[altlumpnum], origLen, &outlen);
 			free(outbuf);
 			fileLen = outlen;
 			int orig_size = fileLen;
@@ -1244,7 +1211,7 @@ int main (int argc, char **argv)
 			int hp2 = (allSprites[altlumpnum]->height);
 			int fileLen;
 			int origLen = sizeof(spriteDC_t) + (wp2*hp2);
-			outbuf = encode((void *)allSprites[altlumpnum], origLen, &outlen);
+			outbuf = EncodeJaguar((void *)allSprites[altlumpnum], origLen, &outlen);
 			fileLen = outlen;
 			int orig_size = fileLen;
 			int padded_size = (orig_size + 7) & ~7;
@@ -1273,7 +1240,7 @@ int main (int argc, char **argv)
 
 	sprintf(output_paths, "%s/bump.wad", output_directory);
 	FILE *bump_fd = fopen(output_paths, "wb");
-	for(int i=0;i<4;i++) {
+	for (int i = 0; i < 4; i++) {
 		fwrite(&pwad[i], 1, 1, bump_fd);
 	}
 	int numbumplumps = NUMTEXLUMPS;
@@ -1285,7 +1252,7 @@ int main (int argc, char **argv)
 		exit(-1);
 	}
 
-	for (int i=0;i<numbumplumps;i++) {
+	for (int i = 0; i <numbumplumps; i++) {
 		memset(bumplumpinfo[i].name, 0, 8);
 		memcpy(bumplumpinfo[i].name, texture_strings[i], 8);
 		bumplumpinfo[i].filepos = lastofs;
@@ -1371,7 +1338,6 @@ int main (int argc, char **argv)
 		goto the_end;
 	}
 
-#define NIGHTDIVE_WAD_SIZE 15103212
 	FILE *nd_fd = fopen(argv[3], "rb"); // doom64.wad
 	if (NULL == nd_fd) {
 		fprintf(stderr, "Could not open specified Nightdive Doom 64 WAD for reading.\n");
@@ -1379,40 +1345,67 @@ int main (int argc, char **argv)
 	}
 	for (int mid = 0; mid < 7; mid++) {
 		char *mapwad = malloc(nd_map_sizes[mid]);
+
+		// begin READ RAW MAP LUMP FROM NIGHTDIVE WAD
 		int nd_seek_rv = fseek(nd_fd, nd_map_starts[mid], SEEK_SET);
 		if (-1 == nd_seek_rv) {
-			fprintf(stderr, "Could not seek to map WAD in Nightdive Doom 64 WAD: %s\n", strerror(errno));
+			fprintf(stderr, "Could not seek to Lost Levels map WAD in Nightdive Doom 64 WAD: %s\n", strerror(errno));
 			exit(-1);
 		}
 
 		size_t nd_total_read = 0;
 		size_t nd_wad_rv = fread(mapwad, 1, nd_map_sizes[mid], nd_fd);
 		if (-1 == nd_wad_rv) {
-			fprintf(stderr, "Could not read map WAD from Nightdive Doom 64 WAD: %s\n", strerror(errno));
+			fprintf(stderr, "Could not read Lost Levels map WAD from Nightdive Doom 64 WAD: %s\n", strerror(errno));
 			exit(-1);
 		}
 
 		nd_total_read += nd_wad_rv;
 		while (nd_total_read < nd_map_sizes[mid]) {
-			nd_wad_rv = fread(mapwad + nd_total_read, 1,nd_map_sizes[mid] - nd_total_read, nd_fd);
+			nd_wad_rv = fread(mapwad + nd_total_read, 1, nd_map_sizes[mid] - nd_total_read, nd_fd);
 			if (-1 == nd_wad_rv) {
-				fprintf(stderr, "Could not read map WAD from Nightdive Doom 64 WAD: %s\n", strerror(errno));
+				fprintf(stderr, "Could not read Lost Levels map WAD from Nightdive Doom 64 WAD: %s\n", strerror(errno));
 				exit(-1);
 			}
 			nd_total_read += nd_wad_rv;
 		}
+		// end READ RAW MAP LUMP FROM NIGHTDIVE WAD
+
+		// begin WRITE RAW MAP LUMP TO DISK
 		char nmapfn[256];
 		sprintf(nmapfn, "map%d_nd.wad", 34+mid);
-		char nmapfn2[256];
-		sprintf(nmapfn2, "%s/maps/map%d.wad", output_directory, 34+mid);
+
 		FILE *nmap_fd = fopen(nmapfn, "w+b");
 		if (NULL == nmap_fd) {
-			fprintf(stderr, "Could not open map WAD for writing.\n");
+			fprintf(stderr, "Could not open Lost Levels map WAD for writing.\n");
 			exit(-1);
 		}
-		fwrite(mapwad, 1, nd_map_sizes[mid], nmap_fd);
+
+		size_t nmap_total_write = 0;
+		size_t nmap_wad_rv = fwrite(mapwad, 1, nd_map_sizes[mid], nmap_fd);
+		if (-1 == nmap_wad_rv) {
+			fprintf(stderr, "Could not write Lost Levels map WAD: %s\n", strerror(errno));
+			exit(-1);
+		}
+
+		nmap_total_write += nmap_wad_rv;
+		while (nmap_total_write < nd_map_sizes[mid]) {
+			nmap_wad_rv = fwrite(mapwad + nmap_total_write, 1, nd_map_sizes[mid] - nmap_total_write, nmap_fd);
+			if (-1 == nmap_wad_rv) {
+				fprintf(stderr, "Could not write Lost Levels map WAD: %s\n", strerror(errno));
+				exit(-1);
+			}
+			nmap_total_write += nmap_wad_rv;
+		}		
 		fclose(nmap_fd);
+		// end WRITE RAW MAP LUMP TO DISK
+
+		// begin CONVERT RAW MAP LUMP TO N64 FORMAT
+		char nmapfn2[256];
+		sprintf(nmapfn2, "%s/maps/map%d.wad", output_directory, 34+mid);
 		convert(nmapfn, nmapfn2);
+		// end CONVERT RAW MAP LUMP TO N64 FORMAT
+
 		free(mapwad);
 	}
 	int nd_close = fclose(nd_fd);
@@ -1423,21 +1416,19 @@ int main (int argc, char **argv)
 
 the_end:
 
+#if REINDEX_FLATS
 	for (int i = 0; i < NUMTEX; i++) {
 		if (allN64Textures[i])
 			free(allN64Textures[i]);
 	}
+#endif
 
-	for (int i = 0; i < NUMSPRITE + NUMALTSPR; i++) {
+	for (int i = 0; i < NUMSPRITE + NUMALTLUMPS; i++) {
 		if (allSprites[i])
 			free(allSprites[i]);
 	}
 
 	free_gunpals();
-	free(enemyPal->table);
-	free(enemyPal);
-	free(nonEnemyPal->table);
-	free(nonEnemyPal);
 	free(altlumpinfo);
 	free(lumpinfo);
 	return 0;

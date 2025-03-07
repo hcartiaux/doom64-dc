@@ -84,10 +84,7 @@ void addnode(unsigned char *pointer)
     list->start = target;
 }
 
-unsigned char *encode(unsigned char *input, int inputlen, int *size);
-
-
-unsigned char *encode(unsigned char *input, int inputlen, int *size)
+unsigned char *EncodeJaguar(unsigned char *input, int inputlen, int *size)
 {
     int putidbyte = 0;
     unsigned char *encodedpos;
@@ -187,24 +184,9 @@ unsigned char *encode(unsigned char *input, int inputlen, int *size)
 
         // reduce the input size
         inputlen -= encodedlen;
-
-        /*
-        // print pacifier dots
-        pacifier -= encodedlen;
-        if (pacifier<=0)
-        {
-            //fprintf(stdout, ".");
-            pacifier += 10000;
-        }
-        */
-
     }
 
     // done with encoding- now wrap up
-
-    if (inputlen != 0) {
-        //fprintf(stdout, "warning: inputlen != 0\n");
-    }
 
     // put the end marker on the file
     if (!putidbyte) {
@@ -219,79 +201,10 @@ unsigned char *encode(unsigned char *input, int inputlen, int *size)
     *output++ = 0;
 
     *size = output - ostart;
-
-    /*
-    fprintf(stdout, "\nnum bytes = %d\n", numbytes);
-    fprintf(stdout, "num codes = %d\n", numcodes);
-    fprintf(stdout, "ave code length = %f\n", (double) codelencount/numcodes);
-    fprintf(stdout, "size = %d\n", *size);
-    */
-
     return ostart;
 }
 
-//
-//  Return the size of compressed data
-//
-
-int decodedsize(unsigned char *input)
-{
-    int getidbyte = 0;
-    int len;
-    int pos;
-    int i;
-    //unsigned char *source;
-    int idbyte;
-    int accum = 0;
-
-    while (1)
-    {
-        /*// get a new idbyte if necessary
-        if (!getidbyte) { idbyte = *input++; }
-        getidbyte = (getidbyte + 1) & 7;
-
-        if (idbyte&1) {
-            // decompress
-            input++;
-            len = *input++ & 0xf;
-            if (!len) break;
-            accum += len + 1;
-        }
-        else {
-            accum++;
-        }
-        *input++;
-
-        idbyte = idbyte >> 1;*/
-
-        // get a new idbyte if necessary
-        if (!getidbyte) { idbyte = *input++; }
-        getidbyte = (getidbyte + 1) & 7;
-
-        if (idbyte & 1)
-        {
-            // decompress
-            pos = *input++ << LENSHIFT;
-            pos = pos | (*input >> LENSHIFT);
-            len = (*input++ & 0xf) + 1;
-            if (len == 1) break;
-            for (i = 0; i < len; i++) {
-                accum++;
-            }
-        }
-        else
-        {
-            accum++;
-            *input++;
-        }
-
-        idbyte = idbyte >> 1;
-    }
-
-    return accum;
-}
-
-void decode(unsigned char *input, unsigned char *output)
+void DecodeJaguar(unsigned char *input, unsigned char *output)
 {
     int getidbyte = 0;
     int len;
@@ -300,23 +213,25 @@ void decode(unsigned char *input, unsigned char *output)
     unsigned char *source;
     int idbyte;
 
-    while (1)
-    {
+    while (1) {
         // get a new idbyte if necessary
-        if (!getidbyte) { idbyte = *input++; }
+        if (!getidbyte)
+			idbyte = *input++;
+
         getidbyte = (getidbyte + 1) & 7;
 
-        if (idbyte&1)
-        {
+        if (idbyte & 1) {
             // decompress
             pos = *input++ << LENSHIFT;
             pos = pos | (*input >> LENSHIFT);
             source = output - pos - 1;
             len = (*input++ & 0xf)+1;
-            if (len==1) break;
-            for (i = 0; i < len; i++) {
+
+            if (len == 1)
+				break;
+
+            for (i = 0; i < len; i++)
                 *output++ = *source++;
-            }
         } else {
             *output++ = *input++;
         }
@@ -342,15 +257,19 @@ typedef struct {
     int unk1;
     int type;
 } encodeArgs_t;
+
 static short ShiftTable[6] = { 4, 6, 8, 10, 12, 14 };
 static int offsetTable[12];
 static int offsetMaxSize, windowSize;
 static encodeArgs_t encArgs;
+
 #define HASH_SIZE (1 << 14)
-static short* encoder__hashtable;
-static short* encoder__hashtarget;
-static short* encoder__hashNext;
-static short* encoder__hashPrev;
+
+static short* d64_encoder_hashtable;
+static short* d64_encoder_hashtarget;
+static short* d64_encoder_hashNext;
+static short* d64_encoder_hashPrev;
+
 typedef struct
 {
     int offset;
@@ -358,6 +277,7 @@ typedef struct
     int cpyoffset;
     int vExtra;
 } copydata_t;
+
 static copydata_t CpyDataTmp = { 0, 0, 0 };
 static short DecodeTable[2516];
 static short array01[1258];
@@ -365,28 +285,33 @@ static buffers_t buffers;
 static byte* window;
 static int OVERFLOW_READ;
 static int OVERFLOW_WRITE;
-int encoder__GetOutputSize(void)
+
+int d64_encoder_GetOutputSize(void)
 {
     return (int)(uintptr_t)((uintptr_t)buffers.output - (uintptr_t)buffers.ostart);
 }
-int encoder__GetReadSize(void)
+
+int d64_encoder_GetReadSize(void)
 {
     return (int)(uintptr_t)((uintptr_t)buffers.input - (uintptr_t)buffers.istart);
 }
-static int encoder__ReadByte(void)
+
+static int d64_encoder_ReadByte(void)
 {
     if ((int)(buffers.input - buffers.istart) >= OVERFLOW_READ)
         return -1;
     return *buffers.input++;
 }
-static void encoder__WriteByte(byte outByte)
+
+static void d64_encoder_WriteByte(byte outByte)
 {
     if ((int)(buffers.output - buffers.ostart) >= OVERFLOW_WRITE) {
         exit(EXIT_FAILURE);
     }
     *buffers.output++ = outByte;
 }
-static void encoder__WriteBinary(int binary) // 8002D288
+
+static void d64_encoder_WriteBinary(int binary) // 8002D288
 {
     buffers.enc_bit_buffer = (buffers.enc_bit_buffer << 1);
     if (binary != 0)
@@ -394,18 +319,19 @@ static void encoder__WriteBinary(int binary) // 8002D288
     buffers.enc_bit_count = (buffers.enc_bit_count + 1);
     if (buffers.enc_bit_count == 8)
     {
-        encoder__WriteByte((byte)buffers.enc_bit_buffer);
+        d64_encoder_WriteByte((byte)buffers.enc_bit_buffer);
         buffers.enc_bit_count = 0;
     }
 }
-static int encoder__ReadBinary(void) // 8002D2F4
+
+static int d64_encoder_ReadBinary(void) // 8002D2F4
 {
     int resultbyte;
     resultbyte = buffers.dec_bit_count;
     buffers.dec_bit_count = (resultbyte - 1);
     if ((resultbyte < 1))
     {
-        resultbyte = encoder__ReadByte();
+        resultbyte = d64_encoder_ReadByte();
         buffers.dec_bit_buffer = resultbyte;
         buffers.dec_bit_count = 7;
     }
@@ -413,7 +339,8 @@ static int encoder__ReadBinary(void) // 8002D2F4
     buffers.dec_bit_buffer = (buffers.dec_bit_buffer << 1);
     return resultbyte;
 }
-static void encoder__WriteCodeBinary(int binary, int shift) // 8002D364
+
+static void d64_encoder_WriteCodeBinary(int binary, int shift) // 8002D364
 {
     int i;
     i = 0;
@@ -421,12 +348,13 @@ static void encoder__WriteCodeBinary(int binary, int shift) // 8002D364
     {
         do
         {
-            encoder__WriteBinary(binary & 1);
+            d64_encoder_WriteBinary(binary & 1);
             binary = (binary >> 1);
         } while (++i != shift);
     }
 }
-static int encoder__ReadCodeBinary(int byte) // 8002D3B8
+
+static int d64_encoder_ReadCodeBinary(int byte) // 8002D3B8
 {
     int shift;
     int i;
@@ -438,20 +366,22 @@ static int encoder__ReadCodeBinary(int byte) // 8002D3B8
         return resultbyte;
     do
     {
-        if (encoder__ReadBinary() != 0)
+        if (d64_encoder_ReadBinary() != 0)
             resultbyte |= shift;
         i++;
         shift = (shift << 1);
     } while (i != byte);
     return resultbyte;
 }
-static void encoder__FlushBitBuffer(void)
+
+static void d64_encoder_FlushBitBuffer(void)
 {
     if (buffers.enc_bit_count > 0) {
-        encoder__WriteByte((byte)(buffers.enc_bit_buffer << (8 - buffers.enc_bit_count)) & 0xff);
+        d64_encoder_WriteByte((byte)(buffers.enc_bit_buffer << (8 - buffers.enc_bit_count)) & 0xff);
     }
 }
-static void encoder__InitTables(void)
+
+static void d64_encoder_InitTables(void)
 {
     int evenVal, oddVal, incrVal, i;
     short* curArray;
@@ -496,7 +426,8 @@ static void encoder__InitTables(void)
     offsetMaxSize = incrVal - 1;             
     windowSize = offsetMaxSize + (64 - 1);   
 }
-static void encoder__CheckTable(int a0, int a1, int a2)
+
+static void d64_encoder_CheckTable(int a0, int a1, int a2)
 {
     int i;
     int idByte1;
@@ -539,7 +470,8 @@ static void encoder__CheckTable(int a0, int a1, int a2)
         i += 4;
     } while (i != 1256);
 }
-static void encoder__UpdateTables(int tblpos)
+
+static void d64_encoder_UpdateTables(int tblpos)
 {
     int incrIdx;
     int evenVal;
@@ -561,10 +493,10 @@ static void encoder__UpdateTables(int tblpos)
         tmpIncrTbl = &incrTbl[idByte1];
         idByte2 = *tmpIncrTbl;
         if (idByte1 == evenTbl[idByte2]) {
-            encoder__CheckTable(idByte1, oddTbl[idByte2], idByte1);
+            d64_encoder_CheckTable(idByte1, oddTbl[idByte2], idByte1);
         }
         else {
-            encoder__CheckTable(idByte1, evenTbl[idByte2], idByte1);
+            d64_encoder_CheckTable(idByte1, evenTbl[idByte2], idByte1);
         }
         do
         {
@@ -595,7 +527,7 @@ static void encoder__UpdateTables(int tblpos)
                 }
                 incrTbl[idByte3] = (short)idByte2;
                 *tmpIncrTbl = (short)incrIdx;
-                encoder__CheckTable(idByte3, idByte4, idByte4);
+                d64_encoder_CheckTable(idByte3, idByte4, idByte4);
                 tmpIncrTbl = &incrTbl[idByte3];
             }
             idByte1 = *tmpIncrTbl;
@@ -604,7 +536,8 @@ static void encoder__UpdateTables(int tblpos)
         } while (idByte2 != 1);
     }
 }
-static int encoder__StartDecodeByte(void)
+
+static int d64_encoder_StartDecodeByte(void)
 {
     int lookup;
     short* evenTbl;
@@ -613,7 +546,7 @@ static int encoder__StartDecodeByte(void)
     evenTbl = &DecodeTable[0];
     oddTbl  = &DecodeTable[629];
     while (lookup < 0x275) {
-        if (encoder__ReadBinary() == 0) {
+        if (d64_encoder_ReadBinary() == 0) {
             lookup = evenTbl[lookup];
         }
         else {
@@ -621,22 +554,23 @@ static int encoder__StartDecodeByte(void)
         }
     }
     lookup = (lookup + -0x275);
-    encoder__UpdateTables(lookup);
+    d64_encoder_UpdateTables(lookup);
     return lookup;
 }
-void encoder__InsertNodeDirectory(int start)
+
+void d64_encoder_InsertNodeDirectory(int start)
 {
     int hashKey = ((window[start % windowSize] ^ (window[(start + 1) % windowSize] << 4)) ^ (window[(start + 2) % windowSize] << 8)) & (HASH_SIZE - 1);
-        if (encoder__hashtable[hashKey] == -1) {
-            encoder__hashtarget[hashKey] = start;
-            encoder__hashNext[start] = -1;
+        if (d64_encoder_hashtable[hashKey] == -1) {
+            d64_encoder_hashtarget[hashKey] = start;
+            d64_encoder_hashNext[start] = -1;
         }
         else {
-            encoder__hashNext[start] = encoder__hashtable[hashKey];
-            encoder__hashPrev[encoder__hashtable[hashKey]] = start;
+            d64_encoder_hashNext[start] = d64_encoder_hashtable[hashKey];
+            d64_encoder_hashPrev[d64_encoder_hashtable[hashKey]] = start;
         }
-        encoder__hashtable[hashKey] = start;
-        encoder__hashPrev[start] = -1;
+        d64_encoder_hashtable[hashKey] = start;
+        d64_encoder_hashPrev[start] = -1;
 }
 
 /*
@@ -648,15 +582,15 @@ void encoder__InsertNodeDirectory(int start)
 ========================
 */
 
-void encoder__DeleteNodeDirectory(int start) // 8002DAD0
+void d64_encoder_DeleteNodeDirectory(int start) // 8002DAD0
 {
     int hashKey = ((window[start % windowSize] ^ (window[(start + 1) % windowSize] << 4)) ^ (window[(start + 2) % windowSize] << 8)) & (HASH_SIZE - 1);
-        if (encoder__hashtable[hashKey] == encoder__hashtarget[hashKey]) {
-            encoder__hashtable[hashKey] = -1;
+        if (d64_encoder_hashtable[hashKey] == d64_encoder_hashtarget[hashKey]) {
+            d64_encoder_hashtable[hashKey] = -1;
         }
         else {
-            encoder__hashNext[encoder__hashPrev[encoder__hashtarget[hashKey]]] = -1;
-            encoder__hashtarget[hashKey] = encoder__hashPrev[encoder__hashtarget[hashKey]];
+            d64_encoder_hashNext[d64_encoder_hashPrev[d64_encoder_hashtarget[hashKey]]] = -1;
+            d64_encoder_hashtarget[hashKey] = d64_encoder_hashPrev[d64_encoder_hashtarget[hashKey]];
         }
 }
 
@@ -669,8 +603,7 @@ void encoder__DeleteNodeDirectory(int start) // 8002DAD0
 ========================
 */
 
-
-int encoder__FindMatch(int start, int count) // 8002DC0C
+int d64_encoder_FindMatch(int start, int count) // 8002DC0C
 {
     int encodedlen;
     int offset;
@@ -687,7 +620,7 @@ int encoder__FindMatch(int start, int count) // 8002DC0C
     }
 
     hashKey = ((window[start % windowSize] ^ (window[(start + 1) % windowSize] << 4)) ^ (window[(start + 2) % windowSize] << 8)) & (HASH_SIZE - 1);
-        offset = encoder__hashtable[hashKey];
+        offset = d64_encoder_hashtable[hashKey];
 
     i = 0;
     while (offset != -1)
@@ -735,12 +668,12 @@ int encoder__FindMatch(int start, int count) // 8002DC0C
                 encArgs.offset = encodedpos;
             }
         }
-            offset = encoder__hashNext[offset]; // try next in list
+            offset = d64_encoder_hashNext[offset]; // try next in list
     }
     return encodedlen;
 }
 
-void encoder__StartEncodeCode(int lookup)
+void d64_encoder_StartEncodeCode(int lookup)
 {
     int lookupCode, lookupCheck;
     short* oddTbl;
@@ -757,16 +690,17 @@ void encoder__StartEncodeCode(int lookup)
         lookupCode = incrTbl[lookupCode];
     };
     while (binCnt) {
-        encoder__WriteBinary(binary[--binCnt]);
+        d64_encoder_WriteBinary(binary[--binCnt]);
     }
-    encoder__UpdateTables(lookup);
+    d64_encoder_UpdateTables(lookup);
 }
-unsigned char* encoder__EncodeD64(unsigned char* input, int inputlen, int* size) {
+
+unsigned char* EncodeD64(unsigned char* input, int inputlen, int* size) {
     int i, readPos, nodePos, looKupCode, byteData;
     int cpyCountNext, cpyCount, cntMin, cntMax;
     int deleteNode, skipCopy;
     unsigned char* output = (unsigned char*)malloc(inputlen * 2);
-    encoder__InitTables();
+    d64_encoder_InitTables();
     OVERFLOW_READ = inputlen;
     OVERFLOW_WRITE = inputlen * 2;
     deleteNode = 0;
@@ -775,28 +709,28 @@ unsigned char* encoder__EncodeD64(unsigned char* input, int inputlen, int* size)
     nodePos = 0;
     buffers.input = buffers.istart = input;
     buffers.output = buffers.ostart = output;
-    encoder__hashtable = (short*)malloc(HASH_SIZE * sizeof(short));
-    encoder__hashtarget = (short*)malloc(HASH_SIZE * sizeof(short));
-    encoder__hashNext = (short*)malloc(windowSize * sizeof(short));
-    encoder__hashPrev = (short*)malloc(windowSize * sizeof(short));
-    memset(encoder__hashNext, 0, windowSize * sizeof(short));
-    memset(encoder__hashPrev, 0, windowSize * sizeof(short));
+    d64_encoder_hashtable = (short*)malloc(HASH_SIZE * sizeof(short));
+    d64_encoder_hashtarget = (short*)malloc(HASH_SIZE * sizeof(short));
+    d64_encoder_hashNext = (short*)malloc(windowSize * sizeof(short));
+    d64_encoder_hashPrev = (short*)malloc(windowSize * sizeof(short));
+    memset(d64_encoder_hashNext, 0, windowSize * sizeof(short));
+    memset(d64_encoder_hashPrev, 0, windowSize * sizeof(short));
     window = (byte*)malloc(windowSize * sizeof(byte));
     memset(window, 0, windowSize * sizeof(byte));
     for (i = 0; i < HASH_SIZE; i++) {
-        encoder__hashtable[i] = -1;
-        encoder__hashtarget[i] = -1;
+        d64_encoder_hashtable[i] = -1;
+        d64_encoder_hashtarget[i] = -1;
     }
     for (i = 0; i < encArgs.incrBit; i++) {
-        byteData = encoder__ReadByte();
+        byteData = d64_encoder_ReadByte();
         if (byteData != -1) {
-            encoder__StartEncodeCode(byteData);
+            d64_encoder_StartEncodeCode(byteData);
             window[i] = byteData;
         }
     }
-    if (encoder__GetReadSize() < OVERFLOW_READ) {
+    if (d64_encoder_GetReadSize() < OVERFLOW_READ) {
         for (i = 0; i < 64; i++) {
-            byteData = encoder__ReadByte();
+            byteData = d64_encoder_ReadByte();
             if (byteData >= 128) {
                 encArgs.type = 1;
             }
@@ -807,12 +741,12 @@ unsigned char* encoder__EncodeD64(unsigned char* input, int inputlen, int* size)
     }
     cntMin = (encArgs.type == 1) ? 20 : 50;
     cntMax = (encArgs.type == 1) ? 200 : 1000;
-    if (encoder__GetReadSize() < OVERFLOW_READ) {
+    if (d64_encoder_GetReadSize() < OVERFLOW_READ) {
         while (readPos != encArgs.incrBit) {
-            encoder__InsertNodeDirectory(nodePos);
+            d64_encoder_InsertNodeDirectory(nodePos);
             if (!skipCopy) {
-                cpyCountNext = encoder__FindMatch(readPos + 1, cntMin);
-                cpyCount = encoder__FindMatch(readPos, cntMax);
+                cpyCountNext = d64_encoder_FindMatch(readPos + 1, cntMin);
+                cpyCount = d64_encoder_FindMatch(readPos, cntMax);
                 if (cpyCount >= 3 && cpyCount >= cpyCountNext) {
                     int count = cpyCount;
                     int ValExtra = encArgs.offset;
@@ -848,12 +782,12 @@ unsigned char* encoder__EncodeD64(unsigned char* input, int inputlen, int* size)
                     else if (Shift == 0x0A) { looKupCode = (0x01BB + (count - 3)); }
                     else if (Shift == 0x0C) { looKupCode = (0x01F9 + (count - 3)); }
                     else if (Shift == 0x0E) { looKupCode = (0x0237 + (count - 3)); }
-                    encoder__StartEncodeCode(looKupCode);
-                    encoder__WriteCodeBinary(ValExtra, Shift);
+                    d64_encoder_StartEncodeCode(looKupCode);
+                    d64_encoder_WriteCodeBinary(ValExtra, Shift);
                     skipCopy = 1;
                 }
                 else {
-                    encoder__StartEncodeCode(window[readPos]);
+                    d64_encoder_StartEncodeCode(window[readPos]);
                 }
             }
             if (--cpyCount == 0) {
@@ -865,8 +799,8 @@ unsigned char* encoder__EncodeD64(unsigned char* input, int inputlen, int* size)
             if (++nodePos == windowSize) {
                 nodePos = 0;
             }
-            if (encoder__GetReadSize() < OVERFLOW_READ) {
-                byteData = encoder__ReadByte();
+            if (d64_encoder_GetReadSize() < OVERFLOW_READ) {
+                byteData = d64_encoder_ReadByte();
                 if (byteData != -1) {
                     window[encArgs.incrBit++] = byteData;
                 }
@@ -875,18 +809,18 @@ unsigned char* encoder__EncodeD64(unsigned char* input, int inputlen, int* size)
                     deleteNode = 1;
                 }
             }
-            if (deleteNode && encoder__GetReadSize() < OVERFLOW_READ) {
-                encoder__DeleteNodeDirectory(encArgs.incrBit);
+            if (deleteNode && d64_encoder_GetReadSize() < OVERFLOW_READ) {
+                d64_encoder_DeleteNodeDirectory(encArgs.incrBit);
             }
         }
     }
-    encoder__StartEncodeCode(0x100);
-    encoder__FlushBitBuffer();
-    *size = encoder__GetOutputSize();
-    free(encoder__hashtable);
-    free(encoder__hashtarget);
-    free(encoder__hashNext);
-    free(encoder__hashPrev);
+    d64_encoder_StartEncodeCode(0x100);
+    d64_encoder_FlushBitBuffer();
+    *size = d64_encoder_GetOutputSize();
+    free(d64_encoder_hashtable);
+    free(d64_encoder_hashtarget);
+    free(d64_encoder_hashNext);
+    free(d64_encoder_hashPrev);
     free(window);
     return output;
 }

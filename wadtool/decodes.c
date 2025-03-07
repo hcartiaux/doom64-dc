@@ -82,7 +82,7 @@ DECODE BASED ROUTINES
 =
 ========================
 */
-int GetOutputSize(void) // [GEC] New
+int d64_decoder_GetOutputSize(void) // [GEC] New
 {
     return (int)((uintptr_t)buffers.output - (uintptr_t)buffers.ostart);
 }
@@ -95,7 +95,7 @@ int GetOutputSize(void) // [GEC] New
 ========================
 */
 
-int GetReadSize(void) // [GEC] New
+int d64_decoder_GetReadSize(void) // [GEC] New
 {
     return (int)((uintptr_t)buffers.input - (uintptr_t)buffers.istart);
 }
@@ -108,7 +108,7 @@ int GetReadSize(void) // [GEC] New
 ========================
 */
 
-static int ReadByte(void) // 8002D1D0
+static int d64_decoder_ReadByte(void) // 8002D1D0
 {
     if ((int)((uintptr_t)buffers.input - (uintptr_t)buffers.istart) >= OVERFLOW_READ)
         return -1;
@@ -124,7 +124,7 @@ static int ReadByte(void) // 8002D1D0
 ========================
 */
 
-static void WriteByte(byte outByte) // 8002D214
+static void d64_decoder_WriteByte(byte outByte) // 8002D214
 {
     if ((int)(buffers.output - buffers.ostart) >= OVERFLOW_WRITE) {
 		fprintf(stderr, "Overflowed output buffer");
@@ -141,7 +141,7 @@ static void WriteByte(byte outByte) // 8002D214
 ========================
 */
 
-static int ReadBinary(void) // 8002D2F4
+static int d64_decoder_ReadBinary(void) // 8002D2F4
 {
     int resultbyte;
 
@@ -150,7 +150,7 @@ static int ReadBinary(void) // 8002D2F4
     buffers.dec_bit_count = (resultbyte - 1);
     if ((resultbyte < 1))
     {
-        resultbyte = ReadByte();
+        resultbyte = d64_decoder_ReadByte();
 
         buffers.dec_bit_buffer = resultbyte;
         buffers.dec_bit_count = 7;
@@ -170,7 +170,7 @@ static int ReadBinary(void) // 8002D2F4
 ========================
 */
 
-static int ReadCodeBinary(int byte) // 8002D3B8
+static int d64_decoder_ReadCodeBinary(int byte) // 8002D3B8
 {
     int shift;
     int i;
@@ -185,7 +185,7 @@ static int ReadCodeBinary(int byte) // 8002D3B8
 
     do
     {
-        if (ReadBinary() != 0)
+        if (d64_decoder_ReadBinary() != 0)
             resultbyte |= shift;
 
         i++;
@@ -203,7 +203,7 @@ static int ReadCodeBinary(int byte) // 8002D3B8
 ========================
 */
 
-static void InitTables(void) // 8002D468
+static void d64_decoder_InitTables(void) // 8002D468
 {
     int evenVal, oddVal, incrVal, i;
 
@@ -270,7 +270,7 @@ static void InitTables(void) // 8002D468
 ========================
 */
 
-static void CheckTable(int a0, int a1, int a2) // 8002D624
+static void d64_decoder_CheckTable(int a0, int a1, int a2) // 8002D624
 {
     int i;
     int idByte1;
@@ -334,7 +334,7 @@ static void CheckTable(int a0, int a1, int a2) // 8002D624
 ========================
 */
 
-static void UpdateTables(int tblpos) // 8002D72C
+static void d64_decoder_UpdateTables(int tblpos) // 8002D72C
 {
     int incrIdx;
     int evenVal;
@@ -361,10 +361,10 @@ static void UpdateTables(int tblpos) // 8002D72C
         idByte2 = *tmpIncrTbl;
 
         if (idByte1 == evenTbl[idByte2]) {
-            CheckTable(idByte1, oddTbl[idByte2], idByte1);
+            d64_decoder_CheckTable(idByte1, oddTbl[idByte2], idByte1);
         }
         else {
-            CheckTable(idByte1, evenTbl[idByte2], idByte1);
+            d64_decoder_CheckTable(idByte1, evenTbl[idByte2], idByte1);
         }
 
         do
@@ -402,7 +402,7 @@ static void UpdateTables(int tblpos) // 8002D72C
                 incrTbl[idByte3] = (short)idByte2;
 
                 *tmpIncrTbl = (short)incrIdx;
-                CheckTable(idByte3, idByte4, idByte4);
+                d64_decoder_CheckTable(idByte3, idByte4, idByte4);
 
                 tmpIncrTbl = &incrTbl[idByte3];
             }
@@ -423,7 +423,7 @@ static void UpdateTables(int tblpos) // 8002D72C
 ========================
 */
 
-static int StartDecodeByte(void) // 8002D904
+static int d64_decoder_StartDecodeByte(void) // 8002D904
 {
     int lookup;
     short* evenTbl;
@@ -435,7 +435,7 @@ static int StartDecodeByte(void) // 8002D904
     oddTbl  = &DecodeTable[629];
 
     while (lookup < 0x275) {
-        if (ReadBinary() == 0) {
+        if (d64_decoder_ReadBinary() == 0) {
             lookup = evenTbl[lookup];
         }
         else {
@@ -444,7 +444,7 @@ static int StartDecodeByte(void) // 8002D904
     }
 
     lookup = (lookup + -0x275);
-    UpdateTables(lookup);
+    d64_decoder_UpdateTables(lookup);
 
     return lookup;
 }
@@ -458,7 +458,7 @@ static int StartDecodeByte(void) // 8002D904
 ========================
 */
 
-void InsertNodeDirectory(int start) // 8002D990
+void d64_decoder_InsertNodeDirectory(int start) // 8002D990
 {
     int hashKey = ((window[start % windowSize] ^ (window[(start + 1) % windowSize] << 4)) ^ (window[(start + 2) % windowSize] << 8)) & (HASH_SIZE - 1);
 
@@ -484,7 +484,7 @@ void InsertNodeDirectory(int start) // 8002D990
 ========================
 */
 
-void DeleteNodeDirectory(int start) // 8002DAD0
+void d64_decoder_DeleteNodeDirectory(int start) // 8002DAD0
 {
     int hashKey = ((window[start % windowSize] ^ (window[(start + 1) % windowSize] << 4)) ^ (window[(start + 2) % windowSize] << 8)) & (HASH_SIZE - 1);
 
@@ -506,8 +506,7 @@ void DeleteNodeDirectory(int start) // 8002DAD0
 ========================
 */
 
-
-int FindMatch(int start, int count) // 8002DC0C
+int d64_decoder_FindMatch(int start, int count) // 8002DC0C
 {
     int encodedlen;
     int offset;
@@ -579,57 +578,6 @@ int FindMatch(int start, int count) // 8002DC0C
     return encodedlen;
 }
 
-
-/*
-========================
-=
-= FUN_8002df14
-= unknown Function
-=
-========================
-*/
-
-void FUN_8002df14(void) // 8002DF14
-{
-    byte byte_val;
-
-    int i, j, k;
-    byte* curPtr;
-    byte* nextPtr;
-    byte* next2Ptr;
-
-    curPtr = &window[0];
-
-    k = 0;
-    j = 0;
-    i = 1;
-    do
-    {
-        nextPtr = &window[j];
-        if (curPtr[0] == 10)
-        {
-            j = i;
-            if (nextPtr[0] == curPtr[1])
-            {
-                next2Ptr = &window[i + 1];
-                do
-                {
-                    nextPtr++;
-                    byte_val = *next2Ptr++;
-                    k++;
-                } while (*nextPtr == byte_val);
-            }
-        }
-        curPtr++;
-        i++;
-    } while (i != 67);
-
-    if (k >= 16) {
-        encArgs.unk1 = 1;
-    }
-}
-
-
 /*
 ========================
 =
@@ -646,7 +594,7 @@ void DecodeD64(unsigned char* input, unsigned char* output) // 8002DFA0
     int dec_byte, resc_byte;
     int incrBit, copyCnt, shiftPos, j;
 
-    InitTables();
+    d64_decoder_InitTables();
 
     OVERFLOW_READ = MAXINT;
     OVERFLOW_WRITE = MAXINT;
@@ -656,7 +604,7 @@ void DecodeD64(unsigned char* input, unsigned char* output) // 8002DFA0
     buffers.input = buffers.istart = input;
     buffers.output = buffers.ostart = output;
 
-    dec_byte = StartDecodeByte();
+    dec_byte = d64_decoder_StartDecodeByte();
 
     while (dec_byte != 256)
     {
@@ -664,7 +612,7 @@ void DecodeD64(unsigned char* input, unsigned char* output) // 8002DFA0
         {
             /*  Decode the data directly using binary data code */
 
-            WriteByte((byte)(dec_byte & 0xff));
+            d64_decoder_WriteByte((byte)(dec_byte & 0xff));
             window[incrBit] = (byte)dec_byte;
 
             /*  Resets the count once the memory limit is exceeded in allocPtr,
@@ -689,7 +637,7 @@ void DecodeD64(unsigned char* input, unsigned char* output) // 8002DFA0
 
             /*  To start copying data, you receive a position number
                 that you must sum with the position of table tableVar01 */
-            resc_byte = ReadCodeBinary(ShiftTable[shiftPos]);
+            resc_byte = d64_decoder_ReadCodeBinary(ShiftTable[shiftPos]);
 
             /*  with this formula the exact position is obtained
                 to start copying previously stored data */
@@ -704,7 +652,7 @@ void DecodeD64(unsigned char* input, unsigned char* output) // 8002DFA0
             for (j = 0; j < copyCnt; j++)
             {
                 /* write the copied data */
-                WriteByte(window[copyPos]);
+                d64_decoder_WriteByte(window[copyPos]);
 
                 /* save copied data at current position in memory allocPtr */
                 window[storePos] = window[copyPos];
@@ -731,6 +679,6 @@ void DecodeD64(unsigned char* input, unsigned char* output) // 8002DFA0
             }
         }
 
-        dec_byte = StartDecodeByte();
+        dec_byte = d64_decoder_StartDecodeByte();
     }
 }
