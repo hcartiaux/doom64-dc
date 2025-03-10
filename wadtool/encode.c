@@ -423,8 +423,8 @@ static void d64_encoder_InitTables(void)
         incrVal += (1 << (ShiftTable[i] & 0x1f));
         *Tbl2++ = incrVal - 1;
     } while (++i <= 5);
-    offsetMaxSize = incrVal - 1;             
-    windowSize = offsetMaxSize + (64 - 1);   
+    offsetMaxSize = incrVal - 1;
+    windowSize = offsetMaxSize + (64 - 1);
 }
 
 static void d64_encoder_CheckTable(int a0, int a1, int a2)
