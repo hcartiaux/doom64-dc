@@ -55,7 +55,7 @@ wadinfo_t wadfileptr;
 int infotableofs;
 int numlumps;
 lumpinfo_t *lumpinfo;
-char identifier[4] = {'P','W','A','D'};
+const char identifier[4] = {'P','W','A','D'};
 uint8_t *doom64wad;
 
 // buffer large enough to hold any compressed lump (maps are the largest)
@@ -777,7 +777,6 @@ void generate_nonenemy_tex(char *output_directory)
 void generate_bump_wad(char *output_directory)
 {
 	int lastofs;
-	char pwad[4] = {'P','W','A','D'};	
 // leaving this in for the sake of showing how this file was generated
 // the file itself is in the repo, so this is commented out
 
@@ -790,7 +789,7 @@ void generate_bump_wad(char *output_directory)
 	sprintf(output_paths, "%s/bump.wad", output_directory);
 	FILE *bump_fd = fopen(output_paths, "wb");
 	for (int i = 0; i < 4; i++) {
-		fwrite(&pwad[i], 1, 1, bump_fd);
+		fwrite(&identifier[i], 1, 1, bump_fd);
 	}
 	int numbumplumps = NUMTEXLUMPS;
 	fwrite(&numbumplumps, 1, 4, bump_fd);
@@ -864,11 +863,10 @@ void generate_bump_wad(char *output_directory)
 void generate_alt_wad(char *output_directory)
 {
 	int lastofs;
-	char pwad[4] = {'P','W','A','D'};
 	sprintf(output_paths, "%s/alt.wad", output_directory);
 	FILE *alt_fd = fopen(output_paths, "wb");
 	for (int i = 0; i < 4; i++) {
-		fwrite(&pwad[i], 1, 1, alt_fd);
+		fwrite(&identifier[i], 1, 1, alt_fd);
 	}
 	int numaltlumps = NUMALTLUMPS;
 	fwrite(&numaltlumps, 1, 4, alt_fd);
@@ -888,7 +886,7 @@ void generate_alt_wad(char *output_directory)
 
 		altlumpinfo[i].filepos = lastofs;
 
-		if (!strncmp(newlumps[i], "S2", 2)) { //[0] == 'S' && newlumps[i][1] == '2') {
+		if (!strncmp(newlumps[i], "S2", 2)) {
 			altlumpinfo[i].size = 0;
 		} else {
 			int altlumpnum = W_GetNumForName(newlumps[i]);
